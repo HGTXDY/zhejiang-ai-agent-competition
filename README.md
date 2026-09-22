@@ -14,6 +14,8 @@
 ```text
 .
 ├── .github/
+│   ├── CODEOWNERS
+│   ├── merge-policy.md
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.md
 │   │   ├── feature_request.md
@@ -26,6 +28,8 @@
 ├── src/                           # 业务代码
 ├── tests/                         # 自动化测试
 ├── .env.example                   # 环境变量示例，禁止放真实密钥
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
 ├── ARCHITECTURE.md                # 系统架构与 Agent 设计
 ├── CONTRIBUTING.md                # 协作开发规范
 ├── DEVELOPMENT.md                 # 日常开发流程
@@ -43,4 +47,5 @@
 2. 每项工作先创建 Issue，再创建对应分支。
 3. 所有合并必须经过 Pull Request 和至少一次 Code Review。
 4. Prompt、工具调用、模型参数和评测数据都需要版本化记录。
+6. 严格遵守 `.github/merge-policy.md`；任何代码上传都必须走工作分支和 Pull Request。
 5. 不提交 API Key、个人隐私数据、比赛未公开材料或大体积生成文件。

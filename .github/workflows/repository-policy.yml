@@ -1,0 +1,40 @@
+name: Repository policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Check repository policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reject common credential files
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden_files=$(find . -path './.git' -prune -o -type f \( \
+            -name '.env' -o -name '*.pem' -o -name '*.key' -o \
+            -name 'credentials.json' -o -name 'service-account*.json' \
+          \) -print)
+          if [[ -n "${forbidden_files}" ]]; then
+            echo "Forbidden credential-like files found:"
+            echo "${forbidden_files}"
+            exit 1
+          fi
+
+      - name: Check for high-risk hard-coded secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -I -E '(AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})' -- ':!*.md' ':!.env.example'; then
+            echo 'Potential hard-coded credential detected.'
+            exit 1
+          fi
