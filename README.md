@@ -37,6 +37,16 @@
 └── README.md
 ```
 
+
+## 当前正式文档
+
+- [PRD 基线](docs/product/PRD_BASELINE.md)
+- [技术架构](docs/technical/TECHNICAL_ARCHITECTURE.md)
+- [数据与 API 契约](docs/technical/DATA_AND_API_CONTRACT.md)
+- [模块分工](docs/project/MODULE_OWNERSHIP.md)
+- [决策权与变更流程](docs/project/DECISION_RIGHTS.md)
+- [开发路线](docs/project/ROADMAP.md)
+
 ## 快速开始
 
 主题和技术栈确定后，在本文件补充：运行环境、依赖安装、启动命令、测试命令和部署方式。所有本地密钥只放在未提交的 `.env` 中，并以 `.env.example` 说明变量名称和用途。
