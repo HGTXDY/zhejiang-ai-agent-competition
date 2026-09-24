@@ -6,6 +6,7 @@
 - [技术架构设计](docs/technical/TECHNICAL_ARCHITECTURE.md)
 - [数据模型与 API 契约](docs/technical/DATA_AND_API_CONTRACT.md)
 - [模块分工](docs/project/MODULE_OWNERSHIP.md)
+- [决策权与变更流程](docs/project/DECISION_RIGHTS.md)
 - [开发路线](docs/project/ROADMAP.md)
 
 ## 核心原则
