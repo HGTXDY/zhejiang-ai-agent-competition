@@ -7,19 +7,19 @@
 | ID | 标题 | 当前负责人 | 状态/边界 |
 |---|---|---|---|
 | [T-001](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/2) | 冻结领域 Schema、枚举与版本规则 | HGTXDY | 主线；只修改契约、样例和契约文档 |
-| [T-003](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/4) | 初始化 Python/FastAPI 后端工程与质量基线 | cbiiro97977 | 并行小任务；不定义业务 Schema |
+| [T-003](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/4) | 初始化 Python/FastAPI 后端工程与质量基线 | cbiiro97977 | #6 校验核心的工程起点 |
+| [T-004](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/5) | 产品前端主流程与 React/TypeScript 工程 | cbiiro97977 | 产品入口；使用 V1 Mock 并行开发 |
 
 ## 待派发任务池
 
-下列 Issue 不预先绑定长期负责人。HGTXDY 根据依赖和当前负载逐个派发；cbiiro97977 可以承担数据、后端或算法模块，不限定为前端角色。
+除当前正在推进的核心线外，下列 Issue 不预先绑定长期负责人。HGTXDY 根据依赖和当前负载逐个派发；cbiiro97977 可以承担数据、后端或算法模块，不限定为前端角色。
 
 | ID | 标题 | 里程碑 | 前置条件 | 建议并行边界 |
 |---|---|---|---|---|
 | [T-002](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/3) | 制作四道菜固定标注数据 | M0 | T-001 契约样例 | 只修改 fixture/标注目录 |
-| [T-004](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/5) | 初始化 React/TypeScript 工程 | M1 | API Mock | 可独立使用契约样例 |
 | [T-005](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/6) | 实现设备能力、DAG 和输入校验器 | M1 | T-001 | 可拆成设备校验与 DAG 校验两个独立子模块 |
 | [T-006](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/7) | 实现 CP-SAT 基础调度器 | M1 | T-005 | 主调度器；公共接口以契约为准 |
-| [T-007](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/8) | 实现基础资源轨道甘特图 | M1 | 排程 Mock | 不等待真实求解器 |
+| [T-007](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/8) | 实现基础资源轨道甘特图 | M1 | T-004、排程 Mock | 不等待真实求解器 |
 | [T-008](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/9) | 建立 M1 自动验收与集成测试 | M1 | T-006 | 测试代码与算法实现分目录 |
 | [T-009](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/10) | 设计 Parser Adapter 与结构化 Prompt | M2 | T-001 | Parser 与调度器通过 Task 契约隔离 |
 | [T-010](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/11) | 建立菜谱解析标注集和字段评测 | M2 | T-001、T-002 | 标注和评测工具可独立开发 |
