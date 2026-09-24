@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "replan-response.schema.json",
+  "title": "CookFlow Replan Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "previous_schedule_id", "schedule", "changes", "disruption_score"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "minLength": 1},
+    "previous_schedule_id": {"type": "string", "minLength": 1},
+    "schedule": {"$ref": "schedule-response.schema.json"},
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "change_type"],
+        "properties": {
+          "task_id": {"type": "string", "minLength": 1},
+          "change_type": {"enum": ["ADDED", "REMOVED", "MOVED", "RESOURCE_CHANGED", "UNCHANGED"]},
+          "old_start_offset_sec": {"type": ["integer", "null"], "minimum": 0},
+          "new_start_offset_sec": {"type": ["integer", "null"], "minimum": 0},
+          "old_resources": {"type": "array", "items": {"type": "string"}},
+          "new_resources": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "disruption_score": {"type": "number", "minimum": 0}
+  }
+}

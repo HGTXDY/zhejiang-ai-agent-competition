@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task.schema.json",
+  "title": "CookFlow Scheduling Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "task_id", "dish_id", "action", "resource_type",
+    "duration_sec", "predecessors", "interruptible"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"},
+    "dish_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "action": {"type": "string", "minLength": 1, "maxLength": 200},
+    "resource_type": {"enum": ["manual", "device", "hybrid", "wait"]},
+    "device_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device_type", "capacity_units"],
+      "properties": {
+        "device_type": {
+          "enum": ["range_hood", "stove", "steamer", "oven", "refrigerator", "dishwasher", "water_purifier"]
+        },
+        "mode": {"type": ["string", "null"], "minLength": 1},
+        "temperature_c": {"type": ["integer", "null"], "minimum": 0, "maximum": 500},
+        "capacity_units": {"type": "integer", "minimum": 1}
+      }
+    },
+    "duration_sec": {"type": "integer", "minimum": 1, "maximum": 86400},
+    "manual_segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["offset_sec", "duration_sec", "action"],
+        "properties": {
+          "offset_sec": {"type": "integer", "minimum": 0},
+          "duration_sec": {"type": "integer", "minimum": 1},
+          "action": {"type": "string", "minLength": 1, "maxLength": 200}
+        }
+      }
+    },
+    "predecessors": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"},
+      "uniqueItems": true
+    },
+    "interruptible": {"type": "boolean"},
+    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "source_step_index": {"type": ["integer", "null"], "minimum": 0}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"resource_type": {"enum": ["device", "hybrid"]}}},
+      "then": {"required": ["device_requirement"]}
+    },
+    {
+      "if": {"properties": {"resource_type": {"enum": ["manual", "wait"]}}},
+      "then": {"not": {"required": ["device_requirement"]}}
+    }
+  ]
+}

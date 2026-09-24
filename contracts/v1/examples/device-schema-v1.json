@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "operator_count": 1,
+  "target_ready_at": "2026-09-24T18:15:00+08:00",
+  "devices": [
+    {
+      "device_id": "stove_burner_1",
+      "device_type": "stove",
+      "capacity_units": 1,
+      "capabilities": {
+        "modes": ["low", "medium", "high"],
+        "temperature_min_c": null,
+        "temperature_max_c": null
+      },
+      "available": true
+    },
+    {
+      "device_id": "steamer_1",
+      "device_type": "steamer",
+      "capacity_units": 2,
+      "capabilities": {
+        "modes": ["normal_steam"],
+        "temperature_min_c": 80,
+        "temperature_max_c": 120
+      },
+      "available": true
+    }
+  ]
+}

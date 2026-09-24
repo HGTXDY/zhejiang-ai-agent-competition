@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "error.schema.json",
+  "title": "CookFlow API Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "error"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "minLength": 1},
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_INPUT", "PARSE_FAILED", "VALIDATION_FAILED",
+            "SCHEDULE_INFEASIBLE", "SOLVER_TIMEOUT", "EVENT_CONFLICT", "INTERNAL_ERROR"
+          ]
+        },
+        "message": {"type": "string", "minLength": 1, "maxLength": 500},
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message"],
+            "properties": {
+              "code": {"type": "string", "minLength": 1},
+              "message": {"type": "string", "minLength": 1},
+              "path": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}

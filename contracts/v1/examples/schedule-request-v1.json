@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "request_id": "req_demo_001",
+  "tasks": [
+    {
+      "schema_version": "1.0",
+      "task_id": "fish_step_02",
+      "dish_id": "steamed_fish",
+      "action": "处理并腌制鲈鱼",
+      "resource_type": "manual",
+      "duration_sec": 300,
+      "manual_segments": [],
+      "predecessors": [],
+      "interruptible": false,
+      "confidence": 0.92,
+      "source_step_index": 1
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "fish_step_03",
+      "dish_id": "steamed_fish",
+      "action": "普通蒸鲈鱼",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "steamer",
+        "mode": "normal_steam",
+        "temperature_c": 100,
+        "capacity_units": 1
+      },
+      "duration_sec": 480,
+      "manual_segments": [
+        {"offset_sec": 0, "duration_sec": 30, "action": "放入蒸箱"},
+        {"offset_sec": 450, "duration_sec": 30, "action": "取出装盘"}
+      ],
+      "predecessors": ["fish_step_02"],
+      "interruptible": false,
+      "confidence": 0.96,
+      "source_step_index": 2
+    }
+  ],
+  "device_config": {
+    "schema_version": "1.0",
+    "operator_count": 1,
+    "target_ready_at": "2026-09-24T18:15:00+08:00",
+    "devices": [
+      {
+        "device_id": "steamer_1",
+        "device_type": "steamer",
+        "capacity_units": 2,
+        "capabilities": {
+          "modes": ["normal_steam"],
+          "temperature_min_c": 80,
+          "temperature_max_c": 120
+        },
+        "available": true
+      }
+    ]
+  },
+  "objective": {
+    "finish_spread_priority": 100,
+    "makespan_priority": 80,
+    "manual_continuity_priority": 60,
+    "target_delay_priority": 40,
+    "manual_merge_gap_sec": 30,
+    "max_solve_time_sec": 5
+  }
+}

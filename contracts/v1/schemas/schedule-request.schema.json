@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schedule-request.schema.json",
+  "title": "CookFlow Create Schedule Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "tasks", "device_config"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+    "tasks": {"type": "array", "minItems": 1, "items": {"$ref": "task.schema.json"}},
+    "device_config": {"$ref": "device.schema.json"},
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "finish_spread_priority": {"type": "integer", "minimum": 0, "maximum": 100, "default": 100},
+        "makespan_priority": {"type": "integer", "minimum": 0, "maximum": 100, "default": 80},
+        "manual_continuity_priority": {"type": "integer", "minimum": 0, "maximum": 100, "default": 60},
+        "target_delay_priority": {"type": "integer", "minimum": 0, "maximum": 100, "default": 40},
+        "manual_merge_gap_sec": {"type": "integer", "minimum": 0, "maximum": 600, "default": 30},
+        "max_solve_time_sec": {"type": "number", "exclusiveMinimum": 0, "maximum": 60, "default": 5}
+      }
+    }
+  }
+}

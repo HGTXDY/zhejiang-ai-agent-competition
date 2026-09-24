@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "task_id": "fish_step_03",
+  "dish_id": "steamed_fish",
+  "action": "普通蒸鲈鱼",
+  "resource_type": "hybrid",
+  "device_requirement": {
+    "device_type": "steamer",
+    "mode": "normal_steam",
+    "temperature_c": 100,
+    "capacity_units": 1
+  },
+  "duration_sec": 480,
+  "manual_segments": [
+    {"offset_sec": 0, "duration_sec": 30, "action": "放入蒸箱"},
+    {"offset_sec": 450, "duration_sec": 30, "action": "取出装盘"}
+  ],
+  "predecessors": ["fish_step_02"],
+  "interruptible": false,
+  "confidence": 0.96,
+  "source_step_index": 2
+}
