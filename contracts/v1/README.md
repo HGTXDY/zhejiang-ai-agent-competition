@@ -13,11 +13,13 @@
 - `schema_version` 当前固定为 `1.0`；
 - 时间长度统一使用整数秒，字段后缀为 `_sec`；耗时指标统一使用整数毫秒，字段后缀为 `_ms`；
 - 所有绝对时间使用带时区的 RFC 3339 字符串；
-- Parser 只输出 `device_type`、模式、温度与容量要求，不输出具体 `device_id`；
+- Parser 输出 `device_type`、可选 `device_unit` 提示、模式、温度、容量和人工字段；未确定具体设备时 `device_unit` 为 null，最终具体资源必须由调度器分配；
 - 具体设备和人工资源由调度器在排程响应的 `assigned_resources` 中分配；
 - `target_ready_at` 是软目标，不能单独造成输入不可行；
+- 任务必须显式携带 `manual_required` 和 `manual_duration_sec`；
 - 已完成或已开始且锁定的任务在重排中不得被移动；
 - `finish_spread_sec` 表示各菜品最后一个必需任务完成时间的最大值减最小值；
+- 排程任务必须返回 `notification_points`；重排必须返回开始时间偏移总量、资源变更数、顺序变更数和已通知任务变更数；
 - 连续人工操作的合并间隔默认 30 秒，可由 `manual_merge_gap_sec` 配置。
 
 ## 版本兼容规则

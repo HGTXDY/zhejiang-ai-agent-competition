@@ -27,21 +27,31 @@
         "dish_id": "steamed_fish",
         "start_offset_sec": 0,
         "end_offset_sec": 420,
-        "assigned_resources": ["operator_1"],
+        "assigned_resources": [
+          "operator_1"
+        ],
         "status": "RUNNING",
-        "locked": true
+        "locked": true,
+        "notification_points": []
       },
       {
         "task_id": "fish_step_03",
         "dish_id": "steamed_fish",
         "start_offset_sec": 420,
         "end_offset_sec": 900,
-        "assigned_resources": ["steamer_1", "operator_1"],
+        "assigned_resources": [
+          "steamer_1",
+          "operator_1"
+        ],
         "status": "PENDING",
-        "locked": false
+        "locked": false,
+        "notification_points": []
       }
     ],
-    "validation": {"valid": true, "errors": []},
+    "validation": {
+      "valid": true,
+      "errors": []
+    },
     "timings_ms": {
       "parse": 0,
       "validation": 3,
@@ -67,9 +77,21 @@
       "change_type": "MOVED",
       "old_start_offset_sec": 300,
       "new_start_offset_sec": 420,
-      "old_resources": ["steamer_1", "operator_1"],
-      "new_resources": ["steamer_1", "operator_1"]
+      "old_resources": [
+        "steamer_1",
+        "operator_1"
+      ],
+      "new_resources": [
+        "steamer_1",
+        "operator_1"
+      ]
     }
   ],
-  "disruption_score": 120
+  "disruption_score": 120,
+  "disruption_metrics": {
+    "start_offset_total_sec": 120,
+    "resource_change_count": 0,
+    "order_change_count": 0,
+    "notified_task_change_count": 1
+  }
 }

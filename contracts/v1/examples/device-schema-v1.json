@@ -8,7 +8,11 @@
       "device_type": "stove",
       "capacity_units": 1,
       "capabilities": {
-        "modes": ["low", "medium", "high"],
+        "modes": [
+          "low",
+          "medium",
+          "high"
+        ],
         "temperature_min_c": null,
         "temperature_max_c": null
       },
@@ -19,7 +23,9 @@
       "device_type": "steamer",
       "capacity_units": 2,
       "capabilities": {
-        "modes": ["normal_steam"],
+        "modes": [
+          "normal_steam"
+        ],
         "temperature_min_c": 80,
         "temperature_max_c": 120
       },

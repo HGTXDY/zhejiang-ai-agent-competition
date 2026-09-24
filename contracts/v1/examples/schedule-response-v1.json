@@ -23,21 +23,31 @@
       "dish_id": "steamed_fish",
       "start_offset_sec": 0,
       "end_offset_sec": 300,
-      "assigned_resources": ["operator_1"],
+      "assigned_resources": [
+        "operator_1"
+      ],
       "status": "PENDING",
-      "locked": false
+      "locked": false,
+      "notification_points": []
     },
     {
       "task_id": "fish_step_03",
       "dish_id": "steamed_fish",
       "start_offset_sec": 300,
       "end_offset_sec": 780,
-      "assigned_resources": ["steamer_1", "operator_1"],
+      "assigned_resources": [
+        "steamer_1",
+        "operator_1"
+      ],
       "status": "PENDING",
-      "locked": false
+      "locked": false,
+      "notification_points": []
     }
   ],
-  "validation": {"valid": true, "errors": []},
+  "validation": {
+    "valid": true,
+    "errors": []
+  },
   "timings_ms": {
     "parse": 0,
     "validation": 4,

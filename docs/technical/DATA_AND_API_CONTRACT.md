@@ -43,10 +43,12 @@ ReplanResponse（新排程、变化列表、扰动指标、通知）
 
 - 官方七类设备映射为：`range_hood`、`stove`、`steamer`、`oven`、`refrigerator`、`dishwasher`、`water_purifier`；
 - 多灶眼等具体资源用多个 `device_id` 表示，例如 `stove_burner_1`；
-- Parser 不分配具体设备，只输出 `device_requirement`；
+- Parser 输出 `device_requirement` 和人工字段；可选 `device_unit` 仅作为识别提示，最终具体设备由调度器在 `assigned_resources` 中分配并校验；
 - 调度器在 `assigned_resources` 中分配具体设备和人工资源；
 - 时间长度统一为秒，性能耗时统一为毫秒，绝对时间必须带时区；
 - 菜品完成时间等于该菜最后一个必需任务的完成时间；
+- 任务必须表达 `manual_required`、`manual_duration_sec`，排程任务必须提供 `notification_points`；
+- 重排响应必须提供开始时间偏移总量、资源变更数、顺序变更数和已通知任务变更数；
 - 同出锅差值为最晚菜品完成时间减最早菜品完成时间；
 - 连续人工片段默认按 30 秒以内间隔合并；
 - 目标开饭时间是软目标，不能单独造成不可行；

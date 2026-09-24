@@ -13,7 +13,9 @@
       "predecessors": [],
       "interruptible": false,
       "confidence": 0.92,
-      "source_step_index": 1
+      "source_step_index": 1,
+      "manual_required": true,
+      "manual_duration_sec": 0
     },
     {
       "schema_version": "1.0",
@@ -29,13 +31,25 @@
       },
       "duration_sec": 480,
       "manual_segments": [
-        {"offset_sec": 0, "duration_sec": 30, "action": "放入蒸箱"},
-        {"offset_sec": 450, "duration_sec": 30, "action": "取出装盘"}
+        {
+          "offset_sec": 0,
+          "duration_sec": 30,
+          "action": "放入蒸箱"
+        },
+        {
+          "offset_sec": 450,
+          "duration_sec": 30,
+          "action": "取出装盘"
+        }
       ],
-      "predecessors": ["fish_step_02"],
+      "predecessors": [
+        "fish_step_02"
+      ],
       "interruptible": false,
       "confidence": 0.96,
-      "source_step_index": 2
+      "source_step_index": 2,
+      "manual_required": true,
+      "manual_duration_sec": 60
     }
   ],
   "device_config": {
@@ -48,7 +62,9 @@
         "device_type": "steamer",
         "capacity_units": 2,
         "capabilities": {
-          "modes": ["normal_steam"],
+          "modes": [
+            "normal_steam"
+          ],
           "temperature_min_c": 80,
           "temperature_max_c": 120
         },

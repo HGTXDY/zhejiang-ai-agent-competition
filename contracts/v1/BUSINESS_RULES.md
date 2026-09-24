@@ -13,6 +13,7 @@ JSON Schema 负责字段类型、必填项、格式和基础范围；以下跨�
 | `MANUAL_SEGMENT_OUT_OF_RANGE` | `offset_sec + duration_sec` 不得超过任务 `duration_sec` |
 | `MANUAL_SEGMENT_OVERLAP` | 同一任务内人工片段不得相互重叠 |
 | `DEVICE_REQUIREMENT_FORBIDDEN` | `manual` 或 `wait` 任务不得声明设备要求 |
+| `MANUAL_DURATION_INVALID` | `manual_required = true` 时 `manual_duration_sec` 必须大于 0；否则应为 0 |
 
 ## 设备能力
 
@@ -24,6 +25,8 @@ JSON Schema 负责字段类型、必填项、格式和基础范围；以下跨�
 | `DEVICE_MODE_UNSUPPORTED` | 任务模式必须由候选设备支持 |
 | `DEVICE_TEMPERATURE_UNSUPPORTED` | 任务温度必须在候选设备范围内 |
 | `DEVICE_CAPACITY_INSUFFICIENT` | 任务容量需求不得超过所有候选设备的可用容量 |
+
+Parser 可以提供具体设备提示 `device_unit`，但调度器必须重新校验并输出最终资源。
 
 V1 设备类型严格限定为比赛给定的七类：`range_hood`（烟机）、`stove`（灶具）、`steamer`（蒸箱）、`oven`（烤箱）、`refrigerator`（冰箱）、`dishwasher`（洗碗机）、`water_purifier`（净水机）。灶眼等可并行单元使用多个具体 `device_id` 表示。
 

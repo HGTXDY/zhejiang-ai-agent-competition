@@ -2,7 +2,11 @@
   "schema_version": "1.0",
   "recipe_id": "steamed_fish",
   "name": "清蒸鲈鱼",
-  "ingredients": ["鲈鱼", "葱", "姜"],
+  "ingredients": [
+    "鲈鱼",
+    "葱",
+    "姜"
+  ],
   "steps_text": [
     "鲈鱼处理后加葱姜腌制5分钟。",
     "放入蒸箱，普通蒸100度8分钟后取出装盘。"
