@@ -153,6 +153,58 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 86400
+    },
+    "field_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Parser provenance for values whose absence or fallback affects scheduling.",
+      "properties": {
+        "duration_sec": {
+          "enum": [
+            "provided",
+            "inferred",
+            "defaulted",
+            "missing",
+            "not_applicable"
+          ]
+        },
+        "device_type": {
+          "enum": [
+            "provided",
+            "inferred",
+            "defaulted",
+            "missing",
+            "not_applicable"
+          ]
+        },
+        "device_mode": {
+          "enum": [
+            "provided",
+            "inferred",
+            "defaulted",
+            "missing",
+            "not_applicable"
+          ]
+        },
+        "temperature_c": {
+          "enum": [
+            "provided",
+            "inferred",
+            "defaulted",
+            "missing",
+            "not_applicable"
+          ]
+        },
+        "manual_duration_sec": {
+          "enum": [
+            "provided",
+            "inferred",
+            "defaulted",
+            "missing",
+            "not_applicable"
+          ]
+        }
+      }
     }
   },
   "allOf": [

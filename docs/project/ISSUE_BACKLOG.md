@@ -2,6 +2,8 @@
 
 ## 当前执行
 
+> 当前阶段所有 P0 产品能力均由两位研发共同实现；外部成员只负责成品后的 PPT、录屏和路演材料。
+
 两位研发同时只各推进一个主任务，减少上下文切换和分支冲突。
 
 | ID | 标题 | 当前负责人 | 状态/边界 |
@@ -17,7 +19,7 @@
 | ID | 标题 | 里程碑 | 前置条件 | 建议并行边界 |
 |---|---|---|---|---|
 | [T-002](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/3) | 制作四道菜固定标注数据 | M0 | T-001 契约样例 | 只修改 fixture/标注目录 |
-| [T-005](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/6) | 实现设备能力、DAG 和输入校验器 | M1 | T-001 | 可拆成设备校验与 DAG 校验两个独立子模块 |
+| [T-005](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/6) | 实现设备能力、DAG 和输入校验器 | M1 | T-001 | 包含模式/温度/容量兼容、字段来源状态和状态转换校验；可拆成设备校验与 DAG 校验两个独立子模块 |
 | [T-006](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/7) | 实现 CP-SAT 基础调度器 | M1 | T-005 | 主调度器；公共接口以契约为准 |
 | [T-007](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/8) | 实现基础资源轨道甘特图 | M1 | T-004、排程 Mock | 不等待真实求解器 |
 | [T-008](https://github.com/HGTXDY/zhejiang-ai-agent-competition/issues/9) | 建立 M1 自动验收与集成测试 | M1 | T-006 | 测试代码与算法实现分目录 |

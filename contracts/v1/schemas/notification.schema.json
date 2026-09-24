@@ -4,14 +4,78 @@
   "title": "CookFlow Notification",
   "type": "object",
   "additionalProperties": false,
-  "required": ["notification_id", "level", "type", "message", "created_at"],
+  "required": [
+    "notification_id",
+    "level",
+    "type",
+    "trigger_offset_sec",
+    "dish_id",
+    "action",
+    "parameters",
+    "message",
+    "created_at"
+  ],
   "properties": {
-    "notification_id": {"type": "string", "minLength": 1},
-    "level": {"enum": ["info", "warning", "error"]},
-    "type": {"enum": ["task_due", "task_delayed", "device_conflict", "schedule_updated", "infeasible"]},
-    "message": {"type": "string", "minLength": 1, "maxLength": 500},
-    "task_id": {"type": ["string", "null"]},
-    "device_id": {"type": ["string", "null"]},
-    "created_at": {"type": "string", "format": "date-time"}
+    "notification_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "enum": [
+        "info",
+        "warning",
+        "error"
+      ]
+    },
+    "type": {
+      "enum": [
+        "task_due",
+        "task_delayed",
+        "device_conflict",
+        "schedule_updated",
+        "infeasible"
+      ]
+    },
+    "trigger_offset_sec": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dish_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "task_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "device_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
   }
 }

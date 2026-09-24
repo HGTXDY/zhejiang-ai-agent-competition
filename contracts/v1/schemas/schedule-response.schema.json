@@ -149,8 +149,11 @@
           "status": {
             "enum": [
               "PENDING",
+              "LOCKED",
               "RUNNING",
+              "DELAYED",
               "COMPLETED",
+              "EXCEPTION",
               "CANCELLED"
             ]
           },

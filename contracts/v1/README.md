@@ -56,3 +56,18 @@ npx json-schema-to-typescript contracts/v1/schemas/schedule-response.schema.json
 ```
 
 生成产物应记录所用契约版本；Schema 更新后重新生成并运行消费方测试。
+
+## API 通用响应约定
+
+所有 HTTP 响应必须包含或通过统一响应中间件提供以下元数据：
+
+- `request_id`：调用链唯一标识；
+- HTTP 状态码及业务错误码；
+- `timings_ms` 或等价的响应耗时字段；
+- `error`：成功时为 `null`，失败时包含稳定 `code`、`message` 和可选 `path`。
+
+`POST /schedules`、`POST /schedules/{id}/replan` 的业务载荷必须额外返回求解状态和阶段耗时；错误不得伪造排程。相对时间统一使用 `_offset_sec`，绝对时间统一使用带时区的 RFC 3339，单个接口不得混用两种口径。
+
+## Parser 字段来源
+
+Parser 产生的 `task.field_status` 用于明确数值、单位和缺失状态。调度入口可以接受固定 JSON fixture，但自然语言解析入口必须拒绝必需字段为 `missing` 且未完成确认/归一化的任务。

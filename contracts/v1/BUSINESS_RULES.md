@@ -47,3 +47,38 @@ V1 设备类型严格限定为比赛给定的七类：`range_hood`（烟机）�
 - 仅重排受事件影响的未完成任务，并输出逐任务变化；
 - 扰动指标至少计算任务开始时间移动量，后续可增加资源切换惩罚；
 - 无可行解或求解超时时返回稳定错误码，不返回伪造的可执行排程。
+
+## 任务状态机
+
+状态转换必须由后端状态机统一执行，前端不得直接改写状态：
+
+```text
+PENDING -> LOCKED | RUNNING | CANCELLED
+LOCKED -> RUNNING | EXCEPTION
+RUNNING -> COMPLETED | DELAYED | EXCEPTION
+DELAYED -> RUNNING | COMPLETED | EXCEPTION
+EXCEPTION -> PENDING | CANCELLED
+COMPLETED -> (terminal)
+CANCELLED -> (terminal)
+```
+
+事件必须携带当前排程编号和发生时间；非法转换返回 `INVALID_STATE_TRANSITION`，不触发重排。
+
+## 蒸箱/烤箱共享容量兼容
+
+蒸箱和烤箱允许并行任务仅当以下条件同时满足：
+
+1. 同一具体设备的任务容量需求总和不超过 `capacity_units`；
+2. 所有任务的非空 `mode` 相同或由设备能力明确声明为兼容；
+3. 所有任务的温度要求有交集，且设备当前温度范围覆盖该交集；
+4. 设备能力未标记为不可并行。
+
+无法证明兼容时按冲突处理，不得由前端或大模型自行放宽规则。校验器应返回稳定错误码 `DEVICE_SHARED_CAPACITY_CONFLICT` 或 `DEVICE_MODE_CONFLICT`。
+
+## Parser 缺失与默认值
+
+Parser 对影响调度的字段必须在 `field_status` 中标记来源：`provided`（原文明确给出）、`inferred`（由上下文推断）、`defaulted`（采用规则默认值）、`missing`（无法得到）或 `not_applicable`。标记为 `missing` 的必需调度字段不得直接进入调度器；必须先由用户确认或由归一化规则补全，并保留原状态用于评测和审计。
+
+## 通知字段完整性
+
+每条 P0 通知必须包含相对触发秒数 `trigger_offset_sec`、菜品 `dish_id`、动作 `action`、设备 `device_id`（无设备时为 null）和结构化 `parameters`。`message` 只能对这些事实做受控表达，不得改变时间、设备或参数。
