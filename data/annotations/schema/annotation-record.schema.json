@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "annotation-record.schema.json",
+  "title": "CookFlow Recipe Annotation Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["recipe_id", "name", "source_row", "source_steps", "annotation_status", "tasks", "review"],
+  "properties": {
+    "recipe_id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "source_row": {"type": "integer", "minimum": 2},
+    "source_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "text"],
+        "properties": {
+          "index": {"type": "integer", "minimum": 0},
+          "text": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "annotation_status": {"enum": ["unannotated", "in_progress", "needs_review", "annotated"]},
+    "tasks": {"type": "array", "items": {"type": "object"}},
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "notes", "low_confidence_fields"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "notes": {"type": "array", "items": {"type": "string"}},
+        "low_confidence_fields": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}
