@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "file": "four-dish-normal.json",
+      "expected_business_errors": []
+    },
+    {
+      "file": "four-dish-resource-insufficient.json",
+      "expected_business_errors": [
+        "DEVICE_TYPE_UNAVAILABLE"
+      ]
+    },
+    {
+      "file": "four-dish-mode-conflict.json",
+      "expected_business_errors": [
+        "DEVICE_MODE_UNSUPPORTED"
+      ]
+    }
+  ]
+}

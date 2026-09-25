@@ -1,0 +1,370 @@
+{
+  "schema_version": "1.0",
+  "request_id": "fixture_four_dishes_normal_v1",
+  "tasks": [
+    {
+      "schema_version": "1.0",
+      "task_id": "ribs_prepare",
+      "dish_id": "braised_ribs",
+      "action": "排骨洗净并准备焯水",
+      "resource_type": "manual",
+      "duration_sec": 180,
+      "manual_segments": [],
+      "predecessors": [],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 0,
+      "manual_required": true,
+      "manual_duration_sec": 180,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "not_applicable",
+        "device_mode": "not_applicable",
+        "temperature_c": "not_applicable",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "ribs_blanch",
+      "dish_id": "braised_ribs",
+      "action": "排骨焯水",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "stove",
+        "mode": "boil",
+        "temperature_c": 100,
+        "capacity_units": 1
+      },
+      "duration_sec": 600,
+      "manual_segments": [
+        {
+          "offset_sec": 0,
+          "duration_sec": 30,
+          "action": "将排骨放入锅中"
+        },
+        {
+          "offset_sec": 570,
+          "duration_sec": 30,
+          "action": "捞出排骨并沥水"
+        }
+      ],
+      "predecessors": [
+        "ribs_prepare"
+      ],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 1,
+      "manual_required": true,
+      "manual_duration_sec": 60,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "ribs_braise",
+      "dish_id": "braised_ribs",
+      "action": "排骨小火炖煮",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "stove",
+        "mode": "low_heat",
+        "temperature_c": 95,
+        "capacity_units": 1
+      },
+      "duration_sec": 1500,
+      "manual_segments": [
+        {
+          "offset_sec": 0,
+          "duration_sec": 60,
+          "action": "加入调味料并转小火"
+        },
+        {
+          "offset_sec": 1440,
+          "duration_sec": 60,
+          "action": "收汁并装盘"
+        }
+      ],
+      "predecessors": [
+        "ribs_blanch"
+      ],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 2,
+      "manual_required": true,
+      "manual_duration_sec": 120,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "fish_prepare",
+      "dish_id": "steamed_fish",
+      "action": "处理并腌制鲈鱼",
+      "resource_type": "manual",
+      "duration_sec": 300,
+      "manual_segments": [],
+      "predecessors": [],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 0,
+      "manual_required": true,
+      "manual_duration_sec": 300,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "not_applicable",
+        "device_mode": "not_applicable",
+        "temperature_c": "not_applicable",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "fish_steam",
+      "dish_id": "steamed_fish",
+      "action": "普通蒸鲈鱼",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "steamer",
+        "mode": "normal_steam",
+        "temperature_c": 100,
+        "capacity_units": 1
+      },
+      "duration_sec": 480,
+      "manual_segments": [
+        {
+          "offset_sec": 0,
+          "duration_sec": 30,
+          "action": "将鲈鱼放入蒸箱"
+        },
+        {
+          "offset_sec": 450,
+          "duration_sec": 30,
+          "action": "取出鲈鱼并装盘"
+        }
+      ],
+      "predecessors": [
+        "fish_prepare"
+      ],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 1,
+      "manual_required": true,
+      "manual_duration_sec": 60,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "broccoli_prepare",
+      "dish_id": "garlic_broccoli",
+      "action": "清洗西兰花并准备蒜蓉",
+      "resource_type": "manual",
+      "duration_sec": 180,
+      "manual_segments": [],
+      "predecessors": [],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 0,
+      "manual_required": true,
+      "manual_duration_sec": 180,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "not_applicable",
+        "device_mode": "not_applicable",
+        "temperature_c": "not_applicable",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "broccoli_stir_fry",
+      "dish_id": "garlic_broccoli",
+      "action": "蒜蓉西兰花翻炒",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "stove",
+        "mode": "high_heat",
+        "temperature_c": 180,
+        "capacity_units": 1
+      },
+      "duration_sec": 300,
+      "manual_segments": [
+        {
+          "offset_sec": 0,
+          "duration_sec": 300,
+          "action": "持续翻炒并调味"
+        }
+      ],
+      "predecessors": [
+        "broccoli_prepare"
+      ],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 1,
+      "manual_required": true,
+      "manual_duration_sec": 300,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "wings_marinate",
+      "dish_id": "baked_wings",
+      "action": "鸡翅改刀并腌制",
+      "resource_type": "manual",
+      "duration_sec": 600,
+      "manual_segments": [],
+      "predecessors": [],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 0,
+      "manual_required": true,
+      "manual_duration_sec": 600,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "not_applicable",
+        "device_mode": "not_applicable",
+        "temperature_c": "not_applicable",
+        "manual_duration_sec": "provided"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "task_id": "wings_bake",
+      "dish_id": "baked_wings",
+      "action": "烤制鸡翅",
+      "resource_type": "hybrid",
+      "device_requirement": {
+        "device_type": "oven",
+        "mode": "convection",
+        "temperature_c": 200,
+        "capacity_units": 1
+      },
+      "duration_sec": 1200,
+      "manual_segments": [
+        {
+          "offset_sec": 0,
+          "duration_sec": 30,
+          "action": "将鸡翅放入烤箱"
+        },
+        {
+          "offset_sec": 600,
+          "duration_sec": 60,
+          "action": "翻面并刷酱"
+        },
+        {
+          "offset_sec": 1170,
+          "duration_sec": 30,
+          "action": "取出鸡翅"
+        }
+      ],
+      "predecessors": [
+        "wings_marinate"
+      ],
+      "interruptible": false,
+      "confidence": 1.0,
+      "source_step_index": 1,
+      "manual_required": true,
+      "manual_duration_sec": 120,
+      "field_status": {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided"
+      }
+    }
+  ],
+  "device_config": {
+    "schema_version": "1.0",
+    "operator_count": 1,
+    "target_ready_at": "2026-09-26T18:15:00+08:00",
+    "devices": [
+      {
+        "device_id": "stove_burner_1",
+        "device_type": "stove",
+        "capacity_units": 1,
+        "capabilities": {
+          "modes": [
+            "boil",
+            "low_heat",
+            "high_heat"
+          ],
+          "temperature_min_c": 60,
+          "temperature_max_c": 250
+        },
+        "available": true
+      },
+      {
+        "device_id": "stove_burner_2",
+        "device_type": "stove",
+        "capacity_units": 1,
+        "capabilities": {
+          "modes": [
+            "boil",
+            "low_heat",
+            "high_heat"
+          ],
+          "temperature_min_c": 60,
+          "temperature_max_c": 250
+        },
+        "available": true
+      },
+      {
+        "device_id": "steamer_1",
+        "device_type": "steamer",
+        "capacity_units": 2,
+        "capabilities": {
+          "modes": [
+            "normal_steam"
+          ],
+          "temperature_min_c": 80,
+          "temperature_max_c": 120
+        },
+        "available": true
+      },
+      {
+        "device_id": "oven_1",
+        "device_type": "oven",
+        "capacity_units": 2,
+        "capabilities": {
+          "modes": [
+            "convection"
+          ],
+          "temperature_min_c": 50,
+          "temperature_max_c": 250
+        },
+        "available": true
+      }
+    ]
+  },
+  "objective": {
+    "finish_spread_priority": 100,
+    "makespan_priority": 80,
+    "manual_continuity_priority": 60,
+    "target_delay_priority": 40,
+    "manual_merge_gap_sec": 30,
+    "max_solve_time_sec": 5
+  }
+}
