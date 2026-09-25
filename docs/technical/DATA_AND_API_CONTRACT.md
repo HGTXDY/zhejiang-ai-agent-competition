@@ -1,137 +1,92 @@
-# 数据模型与 API 契约草案 V1
+# 数据模型与 API 契约 V1
 
-## 1. 菜谱解析输入
+## 1. 规范来源
 
-```json
-{
-  "recipe_id": "dish_001",
-  "name": "清蒸鲈鱼",
-  "ingredients": ["鲈鱼", "葱", "姜"],
-  "steps_text": ["鲈鱼处理后放入蒸箱，普通蒸100度8分钟"]
-}
+机器可读契约以 [`contracts/v1`](../../contracts/v1/README.md) 为唯一事实来源：
+
+- JSON Schema：`contracts/v1/schemas/`；
+- 标准 Mock：`contracts/v1/examples/`；
+- 跨对象业务规则：`contracts/v1/BUSINESS_RULES.md`；
+- 自动校验：`python scripts/validate_contracts.py`。
+
+本文说明对象关系和 API 映射，不重复维护完整字段列表。Schema、实现和本文冲突时，应先停止集成并通过契约 PR 统一，不允许消费方自行猜测。
+
+## 2. 数据流
+
+```text
+Recipe（自然语言菜谱）
+  → Parser
+Task[]（设备类型/能力要求，不含具体设备实例）
+  → Validator
+Validated ScheduleRequest
+  → CP-SAT Scheduler
+ScheduleResponse（分配具体 device_id/operator）
+  → Event + Replanner
+ReplanResponse（新排程、变化列表、扰动指标、通知）
 ```
 
-## 2. 调度任务输入
+## 3. 核心对象
 
-```json
-{
-  "task_id": "dish_001_step_003",
-  "dish_id": "dish_001",
-  "action": "普通蒸鲈鱼",
-  "resource_type": "hybrid",
-  "device_requirement": {
-    "device_type": "steamer",
-    "mode": "normal_steam",
-    "temperature_c": 100,
-    "capacity_units": 1
-  },
-  "duration_sec": 480,
-  "manual_segments": [
-    {"offset_sec": 0, "duration_sec": 30, "action": "放入蒸箱"},
-    {"offset_sec": 450, "duration_sec": 30, "action": "取出装盘"}
-  ],
-  "predecessors": ["dish_001_step_002"],
-  "interruptible": false,
-  "confidence": 0.96,
-  "source_step_index": 2
-}
-```
-
-说明：具体 `device_unit` 不属于解析输入，由调度器在输出中分配。`manual_segments` 用于表达设备自动运行前后需要短时人工介入，避免用单一布尔字段丢失时序。
-
-## 3. 设备配置
-
-```json
-{
-  "operator_count": 1,
-  "target_ready_at": "2026-09-25T18:15:00+08:00",
-  "devices": [
-    {
-      "device_id": "stove_burner_1",
-      "device_type": "stove",
-      "capabilities": {"modes": ["low", "medium", "high"]}
-    },
-    {
-      "device_id": "steamer_1",
-      "device_type": "steamer",
-      "capabilities": {
-        "modes": ["normal_steam"],
-        "temperature_min_c": 80,
-        "temperature_max_c": 120,
-        "capacity_units": 2
-      }
-    }
-  ]
-}
-```
-
-## 4. 排程输出
-
-```json
-{
-  "schedule_id": "sch_01",
-  "solver": {
-    "status": "FEASIBLE",
-    "objective_value": 1240,
-    "best_bound": 1200,
-    "gap": 0.0333,
-    "duration_ms": 842
-  },
-  "metrics": {
-    "makespan_sec": 2700,
-    "finish_spread_sec": 240,
-    "max_continuous_manual_sec": 420,
-    "device_conflicts": 0,
-    "dependency_violations": 0,
-    "target_delay_sec": 0
-  },
-  "tasks": [
-    {
-      "task_id": "dish_001_step_003",
-      "start_offset_sec": 1200,
-      "end_offset_sec": 1680,
-      "assigned_resources": ["steamer_1"],
-      "status": "PENDING",
-      "locked": false
-    }
-  ],
-  "validation": {"valid": true, "errors": []},
-  "timings_ms": {
-    "parse": 0,
-    "validation": 12,
-    "solve": 842,
-    "notification": 8,
-    "total": 875
-  }
-}
-```
-
-## 5. 错误模型
-
-```json
-{
-  "request_id": "req_01",
-  "error": {
-    "code": "SCHEDULE_INFEASIBLE",
-    "message": "当前设备配置无法满足所选菜品",
-    "details": ["蒸箱温度要求冲突且目标时间不足"]
-  }
-}
-```
-
-首批错误码：`INVALID_INPUT`、`PARSE_FAILED`、`VALIDATION_FAILED`、`SCHEDULE_INFEASIBLE`、`SOLVER_TIMEOUT`、`EVENT_CONFLICT`、`INTERNAL_ERROR`。
-
-## 6. API 列表
-
-| 方法 | 路径 | 所属模块 |
+| 对象 | Schema | 说明 |
 |---|---|---|
-| GET | `/api/v1/recipes` | 菜谱 |
-| POST | `/api/v1/recipes/parse` | 解析 |
-| POST | `/api/v1/devices/validate` | 设备校验 |
-| POST | `/api/v1/schedules` | 初始调度 |
-| GET | `/api/v1/schedules/{id}` | 状态查询 |
-| POST | `/api/v1/schedules/{id}/events` | 事件上报 |
-| POST | `/api/v1/schedules/{id}/replan` | 动态重排 |
-| GET | `/api/v1/schedules/{id}/notifications` | 通知 |
+| Recipe | `recipe.schema.json` | 原始菜名、食材和自然语言步骤 |
+| Task | `task.schema.json` | Parser 输出和调度器输入的最小任务 |
+| DeviceConfiguration | `device.schema.json` | 人工数量、目标时间和设备实例能力 |
+| ScheduleRequest | `schedule-request.schema.json` | 初始调度输入及软目标配置 |
+| ScheduleResponse | `schedule-response.schema.json` | 求解状态、排程、指标、校验和分阶段耗时 |
+| ExecutionEvent | `event-request.schema.json` | 完成、延迟、加菜和设备不可用事件 |
+| ReplanResponse | `replan-response.schema.json` | 新排程、逐任务变化和扰动得分 |
+| Notification | `notification.schema.json` | 结构化通知，被排程响应引用 |
+| API Error | `error.schema.json` | 稳定错误码和结构化错误详情 |
 
-API 契约先于前后端并行开发冻结；破坏性变更需要同步更新 Schema、OpenAPI、前端类型和契约测试。
+## 4. 不可变语义
+
+- 官方七类设备映射为：`range_hood`、`stove`、`steamer`、`oven`、`refrigerator`、`dishwasher`、`water_purifier`；
+- 多灶眼等具体资源用多个 `device_id` 表示，例如 `stove_burner_1`；
+- Parser 输出 `device_requirement` 和人工字段；可选 `device_unit` 仅作为识别提示，最终具体设备由调度器在 `assigned_resources` 中分配并校验；
+- 调度器在 `assigned_resources` 中分配具体设备和人工资源；
+- 时间长度统一为秒，性能耗时统一为毫秒，绝对时间必须带时区；
+- 菜品完成时间等于该菜最后一个必需任务的完成时间；
+- 任务必须表达 `manual_required`、`manual_duration_sec`，排程任务必须提供 `notification_points`；
+- 重排响应必须提供开始时间偏移总量、资源变更数、顺序变更数和已通知任务变更数；
+- 同出锅差值为最晚菜品完成时间减最早菜品完成时间；
+- 连续人工片段默认按 30 秒以内间隔合并；
+- 目标开饭时间是软目标，不能单独造成不可行；
+- LLM 输出必须经过 Schema 和业务规则校验，不能直接成为正式排程。
+
+## 5. API 映射
+
+| 方法 | 路径 | 请求 | 响应 |
+|---|---|---|---|
+| `GET` | `/api/v1/recipes` | — | Recipe 列表 |
+| `POST` | `/api/v1/recipes/parse` | Recipe | Task[] + 解析质量信息 |
+| `POST` | `/api/v1/devices/validate` | DeviceConfiguration + Task[] | 校验结果 |
+| `POST` | `/api/v1/schedules` | ScheduleRequest | ScheduleResponse |
+| `GET` | `/api/v1/schedules/{id}` | — | ScheduleResponse |
+| `POST` | `/api/v1/schedules/{id}/events` | ExecutionEvent | 事件接收结果 |
+| `POST` | `/api/v1/schedules/{id}/replan` | ExecutionEvent 或已接收事件 ID | ReplanResponse |
+| `GET` | `/api/v1/schedules/{id}/notifications` | — | Notification[] |
+
+FastAPI/OpenAPI 模型在后端脚手架合并后由 Schema 对应实现，不得更改字段语义。
+
+## 6. 错误模型
+
+稳定错误码首批包括：
+
+- `INVALID_INPUT`；
+- `PARSE_FAILED`；
+- `VALIDATION_FAILED`；
+- `SCHEDULE_INFEASIBLE`；
+- `SOLVER_TIMEOUT`；
+- `EVENT_CONFLICT`；
+- `INTERNAL_ERROR`。
+
+业务校验的细分错误码见 `BUSINESS_RULES.md`。API 错误应包含 `request_id`、稳定 `code`、可读 `message` 和结构化 `details`，不得仅返回求解器原始异常。
+
+## 7. 兼容与并行开发
+
+- `schema_version = 1.0` 为当前基线；
+- 下游模块只依赖已合并的 Schema 和 examples，可用 Mock 并行开发；
+- 破坏性修改需要主版本升级、迁移说明和另一位研发 Review；
+- 每次契约变更必须同步 Schema、examples、本文和契约测试；
+- TypeScript 类型应从 JSON Schema 生成，避免手写字段漂移。

@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "request_id": "req_demo_001",
+  "schedule_id": "sch_demo_001",
+  "solver": {
+    "status": "OPTIMAL",
+    "objective_value": 780,
+    "best_bound": 780,
+    "gap": 0,
+    "duration_ms": 142
+  },
+  "metrics": {
+    "makespan_sec": 780,
+    "finish_spread_sec": 0,
+    "max_continuous_manual_sec": 300,
+    "device_conflicts": 0,
+    "dependency_violations": 0,
+    "target_delay_sec": 0
+  },
+  "tasks": [
+    {
+      "task_id": "fish_step_02",
+      "dish_id": "steamed_fish",
+      "start_offset_sec": 0,
+      "end_offset_sec": 300,
+      "assigned_resources": [
+        "operator_1"
+      ],
+      "status": "PENDING",
+      "locked": false,
+      "notification_points": []
+    },
+    {
+      "task_id": "fish_step_03",
+      "dish_id": "steamed_fish",
+      "start_offset_sec": 300,
+      "end_offset_sec": 780,
+      "assigned_resources": [
+        "steamer_1",
+        "operator_1"
+      ],
+      "status": "PENDING",
+      "locked": false,
+      "notification_points": []
+    }
+  ],
+  "validation": {
+    "valid": true,
+    "errors": []
+  },
+  "timings_ms": {
+    "parse": 0,
+    "validation": 4,
+    "solve": 142,
+    "notification": 1,
+    "total": 147
+  },
+  "notifications": []
+}
