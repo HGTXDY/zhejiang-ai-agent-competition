@@ -1,0 +1,27 @@
+{
+  "source": "/Users/hgtxdy/Downloads/agent",
+  "files": [
+    {
+      "path": "docs/competition/官方赛题细则-方太人工智能专项赛.docx",
+      "sha256": "7e54496aeb20fb86470e251378b0f952146317d30912358f643dee5ce58838cf",
+      "bytes": 171474
+    },
+    {
+      "path": "data/official/recipes_100.csv",
+      "sha256": "96626b4bc7bebc6170a18177a326918728b67f9264eea0d5a820562b0107dc5c",
+      "bytes": 95500,
+      "records": 100,
+      "fields": [
+        "菜谱id",
+        "名称",
+        "食材清单",
+        "烹饪步骤"
+      ]
+    },
+    {
+      "path": "data/official/device_parameters_reference.json",
+      "sha256": "fe8aef3f0afaba5a82d2ef575245cc7f8db92ea5205f8d59f521a63384040061",
+      "bytes": 4337
+    }
+  ]
+}
