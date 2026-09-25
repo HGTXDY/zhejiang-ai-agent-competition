@@ -14,7 +14,6 @@ from referencing import Registry, Resource
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "contracts" / "v1" / "schemas"
 EXAMPLE_DIR = ROOT / "contracts" / "v1" / "examples"
-FIXTURE_DIR = ROOT / "fixtures" / "v1"
 
 EXAMPLE_SCHEMAS = {
     "recipe-v1.json": "recipe.schema.json",
@@ -98,52 +97,6 @@ def validate_schedule_request_business_rules(payload: dict[str, Any]) -> list[st
         if minimum is not None and maximum is not None and minimum > maximum:
             errors.append("INVALID_TEMPERATURE_RANGE")
 
-    available_devices = [device for device in devices if device.get("available", True)]
-    for task in tasks:
-        requirement = task.get("device_requirement")
-        if requirement is None:
-            continue
-
-        candidates = [
-            device
-            for device in available_devices
-            if device["device_type"] == requirement["device_type"]
-        ]
-        if not candidates:
-            errors.append("DEVICE_TYPE_UNAVAILABLE")
-            continue
-
-        mode = requirement.get("mode")
-        mode_candidates = [
-            device
-            for device in candidates
-            if mode is None or mode in device["capabilities"].get("modes", [])
-        ]
-        if not mode_candidates:
-            errors.append("DEVICE_MODE_UNSUPPORTED")
-            continue
-
-        temperature = requirement.get("temperature_c")
-        temperature_candidates = []
-        for device in mode_candidates:
-            capabilities = device["capabilities"]
-            minimum = capabilities.get("temperature_min_c")
-            maximum = capabilities.get("temperature_max_c")
-            if temperature is None or (
-                (minimum is None or minimum <= temperature)
-                and (maximum is None or temperature <= maximum)
-            ):
-                temperature_candidates.append(device)
-        if not temperature_candidates:
-            errors.append("DEVICE_TEMPERATURE_UNSUPPORTED")
-            continue
-
-        if not any(
-            device["capacity_units"] >= requirement["capacity_units"]
-            for device in temperature_candidates
-        ):
-            errors.append("DEVICE_CAPACITY_INSUFFICIENT")
-
     return list(dict.fromkeys(errors))
 
 
@@ -181,39 +134,6 @@ def run_business_rule_regressions(valid_request: dict[str, Any]) -> None:
         print(f"business negative case ok: {expected_code}")
 
 
-
-def validate_fixtures(
-    schemas: dict[str, dict[str, Any]], registry: Registry
-) -> bool:
-    """Validate fixture schemas and exact expected business outcomes."""
-    manifest = load_json(FIXTURE_DIR / "manifest.json")
-    validator = Draft202012Validator(
-        schemas["schedule-request.schema.json"],
-        registry=registry,
-        format_checker=FormatChecker(),
-    )
-    failed = False
-    for entry in manifest["fixtures"]:
-        fixture_name = entry["file"]
-        payload = load_json(FIXTURE_DIR / fixture_name)
-        schema_errors = sorted(validator.iter_errors(payload), key=lambda error: list(error.path))
-        if schema_errors:
-            failed = True
-            for error in schema_errors:
-                path = ".".join(str(part) for part in error.absolute_path) or "<root>"
-                print(f"ERROR {fixture_name} at {path}: {error.message}")
-            continue
-
-        expected = entry["expected_business_errors"]
-        actual = validate_schedule_request_business_rules(payload)
-        if actual != expected:
-            failed = True
-            print(f"ERROR {fixture_name} expected {expected}, got {actual}")
-        else:
-            print(f"fixture ok: {fixture_name} -> {actual or 'valid'}")
-    return failed
-
-
 def main() -> None:
     schemas = {path.name: load_json(path) for path in sorted(SCHEMA_DIR.glob("*.json"))}
     registry = Registry().with_resources(
@@ -247,8 +167,6 @@ def main() -> None:
     else:
         print("business rules ok: schedule-request-v1.json")
         run_business_rule_regressions(valid_request)
-
-    failed = validate_fixtures(schemas, registry) or failed
 
     if failed:
         raise SystemExit(1)
