@@ -15,7 +15,7 @@
       "confidence": 0.92,
       "source_step_index": 1,
       "manual_required": true,
-      "manual_duration_sec": 0
+      "manual_duration_sec": 300
     },
     {
       "schema_version": "1.0",

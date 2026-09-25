@@ -50,6 +50,12 @@ def validate_schedule_request_business_rules(payload: dict[str, Any]) -> list[st
         if any(item not in known_task_ids for item in predecessors):
             errors.append("DANGLING_PREDECESSOR")
 
+        manual_duration = task["manual_duration_sec"]
+        if (task["manual_required"] and manual_duration <= 0) or (
+            not task["manual_required"] and manual_duration != 0
+        ):
+            errors.append("MANUAL_DURATION_INVALID")
+
         segments = sorted(task.get("manual_segments", []), key=lambda item: item["offset_sec"])
         previous_end = 0
         for segment in segments:
@@ -116,6 +122,10 @@ def run_business_rule_regressions(valid_request: dict[str, Any]) -> None:
     devices = copy.deepcopy(valid_request)
     devices["device_config"]["devices"].append(copy.deepcopy(devices["device_config"]["devices"][0]))
     cases.append(("DUPLICATE_DEVICE_ID", devices))
+
+    manual_duration = copy.deepcopy(valid_request)
+    manual_duration["tasks"][0]["manual_duration_sec"] = 0
+    cases.append(("MANUAL_DURATION_INVALID", manual_duration))
 
     for expected_code, payload in cases:
         actual = validate_schedule_request_business_rules(payload)
