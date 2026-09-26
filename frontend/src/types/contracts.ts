@@ -1,4 +1,5 @@
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'DELAYED' | 'COMPLETED' | 'EXCEPTION'
+export type DiffType = 'ADDED' | 'REMOVED' | 'MOVED' | 'RESOURCE_CHANGED' | 'UNCHANGED' | 'LOCKED'
 
 export interface ScheduleTask {
   task_id: string
@@ -10,7 +11,6 @@ export interface ScheduleTask {
   status: TaskStatus
   locked: boolean
 }
-
 export interface ScheduleMetrics {
   makespan_sec: number
   finish_spread_sec: number
@@ -18,16 +18,12 @@ export interface ScheduleMetrics {
   device_conflicts: number
   dependency_violations: number
 }
-
 export interface ScheduleResponse {
   schedule_id: string
   solver_status: 'OPTIMAL' | 'FEASIBLE'
   metrics: ScheduleMetrics
   tasks: ScheduleTask[]
 }
-
-export interface TimelineResource {
-  id: string
-  label: string
-  tone: 'gold' | 'cyan' | 'violet' | 'slate'
-}
+export interface TimelineResource { id: string; label: string; tone: 'gold' | 'cyan' | 'violet' | 'slate' }
+export interface ScheduleDiff { task_id: string; action: string; type: DiffType; detail: string }
+export interface Notification { id: string; title: string; detail: string; level: 'info' | 'success' | 'warning' | 'danger'; created_at: string }
