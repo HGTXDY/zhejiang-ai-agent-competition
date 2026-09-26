@@ -32,3 +32,14 @@ status = LOCKED
 2. 只将可移动任务交给调度器；
 3. 对比重排前后排程，生成 `changes` 和 `disruption_metrics`；
 4. 无解、超时或事件冲突时返回结构化错误，不伪造新排程。
+
+## 重排差异与通知
+
+`backend/app/execution/diff.py` 提供 `compare_schedules` 和
+`build_notifications`：
+
+- 输出 `ADDED`、`REMOVED`、`MOVED`、`RESOURCE_CHANGED`、`UNCHANGED`、`LOCKED`；
+- 计算开始时间偏移总量、资源变化数、顺序变化数和已通知任务变化数；
+- 锁定任务不计入可移动差异，并应由重排服务在候选排程校验阶段拒绝被修改；
+- 对发生变化的任务生成 V1 `schedule_updated` 通知；
+- 不在这里决定新排程，具体排程仍由调度器负责。

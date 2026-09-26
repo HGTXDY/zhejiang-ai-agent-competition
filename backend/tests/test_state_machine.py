@@ -62,3 +62,22 @@ def test_dish_added_rejects_duplicate_and_adds_pending_tasks():
     with pytest.raises(EventError) as duplicate:
         machine.apply(event("e2", "DISH_ADDED", {"tasks": [new_task]}))
     assert duplicate.value.code == "DUPLICATE_TASK_ID"
+
+
+def test_schedule_diff_reports_move_resource_change_and_notifications():
+    from app.execution import build_notifications, compare_schedules
+
+    previous = [
+        {"task_id": "a", "dish_id": "d", "start_offset_sec": 0, "assigned_resources": ["stove_1"], "locked": False},
+        {"task_id": "b", "dish_id": "d", "start_offset_sec": 100, "assigned_resources": ["oven_1"], "locked": False},
+    ]
+    current = [
+        {"task_id": "a", "dish_id": "d", "start_offset_sec": 20, "assigned_resources": ["stove_1"], "locked": False},
+        {"task_id": "b", "dish_id": "d", "start_offset_sec": 100, "assigned_resources": ["stove_2"], "locked": False},
+    ]
+    changes, metrics = compare_schedules(previous, current, notified_task_ids={"a", "b"})
+    assert [change["change_type"] for change in changes] == ["MOVED", "RESOURCE_CHANGED"]
+    assert metrics["start_offset_total_sec"] == 20
+    assert metrics["resource_change_count"] == 1
+    assert metrics["notified_task_change_count"] == 2
+    assert len(build_notifications(changes, created_at="2026-09-26T12:00:00Z")) == 2
