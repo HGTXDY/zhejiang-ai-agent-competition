@@ -53,12 +53,14 @@ def _status_name(status: int) -> str:
     }.get(status, "UNKNOWN")
 
 
-def _error_response(request: dict[str, Any], code: str, message: str, elapsed_ms: int) -> dict[str, Any]:
+def _error_response(
+    request: dict[str, Any], code: str, message: str, elapsed_ms: int, *, status: str = "INFEASIBLE"
+) -> dict[str, Any]:
     return {
         "schema_version": "1.0",
         "request_id": request["request_id"],
         "schedule_id": f"{request['request_id']}_schedule",
-        "solver": {"status": "INFEASIBLE", "objective_value": None, "best_bound": None, "gap": None, "duration_ms": elapsed_ms},
+        "solver": {"status": status, "objective_value": None, "best_bound": None, "gap": None, "duration_ms": elapsed_ms},
         "metrics": {"makespan_sec": 0, "finish_spread_sec": 0, "max_continuous_manual_sec": 0, "device_conflicts": 0, "dependency_violations": 0, "target_delay_sec": 0},
         "tasks": [],
         "validation": {"valid": False, "errors": [{"code": code, "message": message, "path": None}]},
@@ -147,7 +149,15 @@ def schedule(request: dict[str, Any], config: SchedulerConfig | None = None) -> 
     elapsed_ms = int((perf_counter() - started) * 1000)
     status_name = _status_name(status)
     if status_name in {"INFEASIBLE", "UNKNOWN"}:
-        return _error_response(request, "NO_FEASIBLE_SCHEDULE", "No feasible schedule found", elapsed_ms)
+        return _error_response(
+            request,
+            "SOLVER_TIMEOUT",
+            "Solver did not produce a feasible result within the time limit",
+            elapsed_ms,
+            status="UNKNOWN",
+        ) if status_name == "UNKNOWN" else _error_response(
+            request, "NO_FEASIBLE_SCHEDULE", "No feasible schedule found", elapsed_ms, status="INFEASIBLE"
+        )
 
     scheduled_tasks = []
     for task in tasks:

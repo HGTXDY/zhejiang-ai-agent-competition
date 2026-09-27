@@ -25,3 +25,14 @@ def test_unavailable_device_returns_stable_error() -> None:
     result = schedule(load_fixture("four-dish-resource-insufficient.json"))
     assert result["solver"]["status"] == "INFEASIBLE"
     assert result["validation"]["errors"][0]["code"] == "NO_COMPATIBLE_DEVICE"
+
+
+def test_solver_status_error_distinguishes_unknown_from_infeasible():
+    from app.scheduler.cp_sat import _error_response
+
+    request = load_fixture("four-dish-normal.json")
+    unknown = _error_response(request, "SOLVER_TIMEOUT", "timed out", 10, status="UNKNOWN")
+    infeasible = _error_response(request, "NO_FEASIBLE_SCHEDULE", "no solution", 10, status="INFEASIBLE")
+    assert unknown["solver"]["status"] == "UNKNOWN"
+    assert unknown["validation"]["errors"][0]["code"] == "SOLVER_TIMEOUT"
+    assert infeasible["solver"]["status"] == "INFEASIBLE"
