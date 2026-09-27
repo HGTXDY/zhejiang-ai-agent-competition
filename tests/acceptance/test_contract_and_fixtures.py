@@ -89,3 +89,15 @@ def test_normal_fixture_runs_validator_scheduler_and_result_checks():
 def test_resource_insufficient_fixture_is_rejected_before_scheduler():
     request = _load(FIXTURE_DIR / "four-dish-resource-insufficient.json")
     assert validate_schedule_request_business_rules(request) == ["DEVICE_TYPE_UNAVAILABLE"]
+
+
+def test_resource_insufficient_fixture_reaches_scheduler_and_returns_infeasible():
+    """Keep the negative path honest: business validation may pass, but CP-SAT must reject it."""
+    from app.scheduler import schedule
+
+    request = _load(FIXTURE_DIR / "four-dish-resource-insufficient.json")
+    assert validate_schedule_request_business_rules(request) == ["DEVICE_TYPE_UNAVAILABLE"]
+    result = schedule(request)
+    assert result["solver"]["status"] == "INFEASIBLE"
+    assert result["validation"]["valid"] is False
+    assert result["validation"]["errors"][0]["code"] == "NO_COMPATIBLE_DEVICE"
