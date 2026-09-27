@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 ALLOWED_EVENTS = {"TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE"}
-LOCKED_STATUSES = {"RUNNING", "COMPLETED", "LOCKED"}
+LOCKED_STATUSES = {"COMPLETED", "LOCKED"}
 # Explicit transition policy: execution events cannot skip the lifecycle start.
 # A replan may mark pending work as exceptional when a device disappears, but
 # completion and delay reports require work that has actually started.

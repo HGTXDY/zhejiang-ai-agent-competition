@@ -4,11 +4,11 @@ from app.execution import EventError, ExecutionStateMachine
 
 
 
-def schedule():
+def schedule(prep_status="PENDING"):
     return {
         "schedule_id": "s1",
         "tasks": [
-            {"task_id": "prep", "dish_id": "d", "status": "PENDING", "locked": False, "assigned_resources": [], "predecessors": [], "notification_points": []},
+            {"task_id": "prep", "dish_id": "d", "status": prep_status, "locked": False, "assigned_resources": [], "predecessors": [], "notification_points": []},
             {"task_id": "cook", "dish_id": "d", "status": "PENDING", "locked": False, "assigned_resources": ["stove_1"], "predecessors": ["prep"], "notification_points": []},
             {"task_id": "other", "dish_id": "d2", "status": "PENDING", "locked": False, "assigned_resources": ["stove_1"], "predecessors": [], "notification_points": []},
         ],
@@ -20,7 +20,7 @@ def event(event_id, event_type, payload, schedule_id="s1"):
 
 
 def test_completed_task_is_locked_and_dependents_are_affected():
-    machine = ExecutionStateMachine(schedule())
+    machine = ExecutionStateMachine(schedule(prep_status="RUNNING"))
     result = machine.apply(event("e1", "TASK_COMPLETED", {"task_id": "prep"}))
     assert result.affected_task_ids == ("cook",)
     assert machine.schedule["tasks"][0]["status"] == "COMPLETED"
@@ -28,7 +28,7 @@ def test_completed_task_is_locked_and_dependents_are_affected():
 
 
 def test_locked_task_cannot_be_delayed():
-    machine = ExecutionStateMachine(schedule())
+    machine = ExecutionStateMachine(schedule(prep_status="RUNNING"))
     machine.apply(event("e1", "TASK_COMPLETED", {"task_id": "prep"}))
     with pytest.raises(EventError, match="cannot be moved") as exc:
         machine.apply(event("e2", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 30}))
@@ -43,7 +43,7 @@ def test_device_unavailable_marks_only_mutable_affected_tasks():
 
 
 def test_duplicate_event_and_schedule_mismatch_are_rejected():
-    machine = ExecutionStateMachine(schedule())
+    machine = ExecutionStateMachine(schedule(prep_status="RUNNING"))
     machine.apply(event("e1", "TASK_COMPLETED", {"task_id": "prep"}))
     with pytest.raises(EventError) as duplicate:
         machine.apply(event("e1", "TASK_COMPLETED", {"task_id": "prep"}))
@@ -94,9 +94,8 @@ def test_pending_task_cannot_be_completed_or_delayed():
 
 
 def test_delay_requires_positive_integer_and_running_task():
-    machine = ExecutionStateMachine(schedule())
+    machine = ExecutionStateMachine(schedule(prep_status="RUNNING"))
     machine.schedule  # verify the public snapshot does not expose internal state
-    machine._tasks["prep"]["status"] = "RUNNING"
     with pytest.raises(EventError) as invalid:
         machine.apply(event("e1", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 0}))
     assert invalid.value.code == "INVALID_EVENT_PAYLOAD"
