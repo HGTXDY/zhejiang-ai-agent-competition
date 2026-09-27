@@ -105,3 +105,15 @@ def test_replan_delay_moves_mutable_task_after_delay_floor():
     changed = next(task for task in response.json()["schedule"]["tasks"] if task["task_id"] == task_id)
     assert changed["status"] == "DELAYED"
     assert changed["start_offset_sec"] >= old_start + 30
+
+
+def test_replan_rejects_unknown_device_event():
+    request, previous = current_schedule()
+    body = {
+        "event": event("event-unknown-device-1", previous["schedule_id"], "DEVICE_UNAVAILABLE", {"device_id": "stove-does-not-exist"}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNKNOWN_DEVICE"

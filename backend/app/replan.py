@@ -75,6 +75,16 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     if previous.get("schedule_id") != event["schedule_id"]:
         raise ReplanError("SCHEDULE_MISMATCH", "Event schedule_id does not match current schedule")
 
+    if event["event_type"] == "DEVICE_UNAVAILABLE":
+        device_id = event["payload"]["device_id"]
+        configured_devices = {device["device_id"] for device in request["device_config"]["devices"]}
+        if device_id not in configured_devices:
+            raise ReplanError(
+                "UNKNOWN_DEVICE",
+                f"Device {device_id} is not present in the schedule request",
+                details=[{"code": "UNKNOWN_DEVICE", "message": device_id, "path": "event.payload.device_id"}],
+            )
+
     machine = ExecutionStateMachine(previous)
     try:
         result = machine.apply(event)
