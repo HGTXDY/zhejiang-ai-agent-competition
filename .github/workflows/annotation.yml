@@ -1,0 +1,27 @@
+name: Annotation pipeline
+
+on:
+  pull_request:
+    paths:
+      - "data/official/recipes_100.csv"
+      - "data/annotations/**"
+      - "scripts/build_annotation_template.py"
+      - "scripts/evaluate_parser.py"
+      - "tests/test_annotation_pipeline.py"
+      - ".github/workflows/annotation.yml"
+
+jobs:
+  annotation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Verify official corpus and annotation pipeline
+        run: |
+          python scripts/build_annotation_template.py --output /tmp/recipes_100.jsonl
+          test "$(wc -l < /tmp/recipes_100.jsonl)" -eq 100
+          python -m pytest -q tests/test_annotation_pipeline.py
