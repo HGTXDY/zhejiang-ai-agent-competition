@@ -1,4 +1,4 @@
-import type { ScheduleResponse, TimelineResource } from '../types/contracts'
+import type { DashboardSchedule, TimelineResource } from '../types/contracts'
 
 export const resources: TimelineResource[] = [
   { id: 'operator_1', label: '操作员 · 主厨', tone: 'gold' },
@@ -7,7 +7,7 @@ export const resources: TimelineResource[] = [
   { id: 'oven_1', label: '烤箱 · 01', tone: 'slate' },
 ]
 
-export const initialSchedule: ScheduleResponse = {
+export const initialSchedule: DashboardSchedule = {
   schema_version: '1.0',
   request_id: 'cookflow_demo_request_001',
   schedule_id: 'cookflow_demo_001',

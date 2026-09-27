@@ -14,6 +14,8 @@ export interface ScheduleTask {
   status: TaskStatus
   locked: boolean
   notification_points: NotificationPoint[]
+}
+export interface DashboardTask extends ScheduleTask {
   /** UI-only label populated by the adapter until the task action field is added to V1. */
   action: string
 }
@@ -32,6 +34,7 @@ export interface ScheduleResponse {
   timings_ms: { parse: number; validation: number; solve: number; notification: number; total: number }
   notifications: Notification[]
 }
+export type DashboardSchedule = Omit<ScheduleResponse, 'tasks'> & { tasks: DashboardTask[] }
 export interface Notification {
   notification_id: string
   level: NotificationLevel

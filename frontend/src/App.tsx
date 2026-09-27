@@ -3,12 +3,12 @@ import { MetricCard } from './components/MetricCard'
 import { Timeline } from './components/Timeline'
 import { api } from './api/client'
 import { initialSchedule, resources } from './mock/schedule'
-import type { Notification, ScheduleDiff, ScheduleTask } from './types/contracts'
+import type { DashboardTask, Notification, ScheduleDiff } from './types/contracts'
 import './styles.css'
-const statusLabel: Record<ScheduleTask['status'], string> = { PENDING: '待执行', LOCKED: '已锁定', RUNNING: '执行中', DELAYED: '已延迟', COMPLETED: '已完成', EXCEPTION: '异常', CANCELLED: '已取消' }
+const statusLabel: Record<DashboardTask['status'], string> = { PENDING: '待执行', LOCKED: '已锁定', RUNNING: '执行中', DELAYED: '已延迟', COMPLETED: '已完成', EXCEPTION: '异常', CANCELLED: '已取消' }
 const diffLabel: Record<ScheduleDiff['type'], string> = { ADDED: '新增', REMOVED: '移除', MOVED: '移动', RESOURCE_CHANGED: '资源变更', UNCHANGED: '未变化', LOCKED: '已锁定' }
 export default function App() {
-  const [tasks, setTasks] = useState(initialSchedule.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | ScheduleTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
+  const [tasks, setTasks] = useState(initialSchedule.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | DashboardTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
   const selected = tasks.find(task => task.task_id === selectedId) ?? null, completed = tasks.filter(task => task.status === 'COMPLETED').length, progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0
   const metrics = useMemo(() => ({ ...initialSchedule.metrics, makespan_sec: Math.max(...tasks.map(task => task.end_offset_sec)) }), [tasks]), filteredTasks = tasks.filter(task => statusFilter === 'ALL' || task.status === statusFilter)
   useEffect(() => { let active = true; void api.getSchedule().then(schedule => { if (active) setTasks(schedule.tasks) }).catch(() => { if (active) setError('排程加载失败，当前展示本地演示数据') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])

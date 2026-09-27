@@ -1,19 +1,19 @@
 import { initialSchedule } from './schedule'
-import type { Notification, ScheduleResponse, ScheduleTask } from '../types/contracts'
+import type { DashboardSchedule, DashboardTask, Notification } from '../types/contracts'
 
 const wait = (ms = 220) => new Promise(resolve => window.setTimeout(resolve, ms))
 
-export async function getSchedule(): Promise<ScheduleResponse> {
+export async function getSchedule(): Promise<DashboardSchedule> {
   await wait()
   return structuredClone(initialSchedule)
 }
 
 export async function postEvent(
-  task: ScheduleTask,
-  status: ScheduleTask['status'],
-): Promise<{ task: ScheduleTask; notification: Notification }> {
+  task: DashboardTask,
+  status: DashboardTask['status'],
+): Promise<{ task: DashboardTask; notification: Notification }> {
   await wait()
-  const labels: Partial<Record<ScheduleTask['status'], string>> = {
+  const labels: Partial<Record<DashboardTask['status'], string>> = {
     COMPLETED: '完成',
     DELAYED: '延迟',
     EXCEPTION: '设备异常',
@@ -33,7 +33,7 @@ export async function postEvent(
   return { task: { ...task, status }, notification }
 }
 
-export async function addDish(): Promise<{ tasks: ScheduleTask[]; notification: Notification }> {
+export async function addDish(): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
   await wait()
   return {
     tasks: [

@@ -1,10 +1,10 @@
 import { addDish, getSchedule, postEvent } from '../mock/api'
-import type { Notification, ScheduleResponse, ScheduleTask } from '../types/contracts'
+import type { DashboardSchedule, DashboardTask, Notification } from '../types/contracts'
 
 export interface CookFlowApi {
-  getSchedule(): Promise<ScheduleResponse>
-  postEvent(task: ScheduleTask, status: ScheduleTask['status']): Promise<{ task: ScheduleTask; notification: Notification }>
-  addDish(): Promise<{ tasks: ScheduleTask[]; notification: Notification }>
+  getSchedule(): Promise<DashboardSchedule>
+  postEvent(task: DashboardTask, status: DashboardTask['status']): Promise<{ task: DashboardTask; notification: Notification }>
+  addDish(): Promise<{ tasks: DashboardTask[]; notification: Notification }>
 }
 
 /** API boundary: swap this implementation for HttpCookFlowApi when FastAPI is ready. */

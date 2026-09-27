@@ -1,5 +1,5 @@
-import type { ScheduleTask, TimelineResource } from '../types/contracts'
-interface Props { tasks: ScheduleTask[]; resources: TimelineResource[]; selectedId: string | null; resourceFilter: string; onSelect: (task: ScheduleTask) => void }
+import type { DashboardTask, TimelineResource } from '../types/contracts'
+interface Props { tasks: DashboardTask[]; resources: TimelineResource[]; selectedId: string | null; resourceFilter: string; onSelect: (task: DashboardTask) => void }
 const WINDOW = 2700
 const format = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 export function Timeline({ tasks, resources, selectedId, resourceFilter, onSelect }: Props) {
