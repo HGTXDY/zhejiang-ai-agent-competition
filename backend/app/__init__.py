@@ -1,1 +1,1 @@
-"""CookFlow backend application package."""
+"""CookFlow backend package."""
