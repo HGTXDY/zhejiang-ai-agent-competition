@@ -10,7 +10,10 @@ const diffLabel: Record<ScheduleDiff['type'], string> = { ADDED: '新增', REMOV
 export default function App() {
   const [tasks, setTasks] = useState(initialSchedule.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | DashboardTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
   const selected = tasks.find(task => task.task_id === selectedId) ?? null, completed = tasks.filter(task => task.status === 'COMPLETED').length, progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0
-  const metrics = useMemo(() => ({ ...initialSchedule.metrics, makespan_sec: Math.max(...tasks.map(task => task.end_offset_sec)) }), [tasks]), filteredTasks = tasks.filter(task => statusFilter === 'ALL' || task.status === statusFilter)
+  const metrics = useMemo(() => ({ ...initialSchedule.metrics, makespan_sec: tasks.reduce((max, task) => Math.max(max, task.end_offset_sec), 0) }), [tasks]), filteredTasks = tasks.filter(task => statusFilter === 'ALL' || task.status === statusFilter)
+  useEffect(() => {
+    if (!tasks.some(task => task.task_id === selectedId)) setSelectedId(tasks[0]?.task_id ?? null)
+  }, [tasks, selectedId])
   useEffect(() => { let active = true; void api.getSchedule().then(schedule => { if (active) setTasks(schedule.tasks) }).catch(() => { if (active) setError('排程加载失败，当前展示本地演示数据') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])
   function pushNotification(notification: Notification) { setNotifications(current => [notification, ...current].slice(0, 5)); setToast(notification.action) }
   async function updateSelected(next: 'COMPLETED' | 'DELAYED' | 'EXCEPTION') {
