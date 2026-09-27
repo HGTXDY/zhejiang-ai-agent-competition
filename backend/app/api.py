@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
@@ -61,6 +63,17 @@ def _schema_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="CookFlow Scheduling API", version="1.0")
+    configured_origins = os.getenv(
+        "COOKFLOW_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in configured_origins.split(",") if origin.strip()],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
 
     @app.get("/health")
     def health() -> dict[str, str]:
