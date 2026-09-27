@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "replan-request.schema.json",
+  "title": "CookFlow Dynamic Replan Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "schedule_request", "current_schedule"],
+  "properties": {
+    "event": {"$ref": "event-request.schema.json"},
+    "schedule_request": {"$ref": "schedule-request.schema.json"},
+    "current_schedule": {"$ref": "schedule-response.schema.json"}
+  }
+}

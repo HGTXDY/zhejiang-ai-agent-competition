@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+from app.replan import ReplanError, replan
 from app.scheduler import schedule
 from scripts.validate_contracts import validate_schedule_request_business_rules
 
@@ -110,6 +111,21 @@ def create_app() -> FastAPI:
                 "error": {"code": "SCHEDULE_INFEASIBLE", "message": "No feasible schedule found", "details": result["validation"]["errors"]},
             })
         return result
+
+    @app.post("/v1/replans")
+    def create_replan(envelope: dict[str, Any]) -> Any:
+        event_id = str(envelope.get("event", {}).get("event_id") or "unknown")
+        try:
+            return replan(envelope)
+        except ReplanError as error:
+            return JSONResponse(
+                status_code=error.status_code,
+                content={
+                    "schema_version": "1.0",
+                    "request_id": event_id,
+                    "error": {"code": error.code, "message": error.message, "details": error.details},
+                },
+            )
 
     return app
 
