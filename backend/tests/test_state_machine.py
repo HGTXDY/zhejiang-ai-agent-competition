@@ -81,3 +81,25 @@ def test_schedule_diff_reports_move_resource_change_and_notifications():
     assert metrics["resource_change_count"] == 1
     assert metrics["notified_task_change_count"] == 2
     assert len(build_notifications(changes, created_at="2026-09-26T12:00:00Z")) == 2
+
+
+def test_pending_task_cannot_be_completed_or_delayed():
+    machine = ExecutionStateMachine(schedule())
+    with pytest.raises(EventError) as complete:
+        machine.apply(event("e1", "TASK_COMPLETED", {"task_id": "prep"}))
+    assert complete.value.code == "INVALID_STATE_TRANSITION"
+    with pytest.raises(EventError) as delayed:
+        machine.apply(event("e2", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 30}))
+    assert delayed.value.code == "INVALID_STATE_TRANSITION"
+
+
+def test_delay_requires_positive_integer_and_running_task():
+    machine = ExecutionStateMachine(schedule())
+    machine.schedule  # verify the public snapshot does not expose internal state
+    machine._tasks["prep"]["status"] = "RUNNING"
+    with pytest.raises(EventError) as invalid:
+        machine.apply(event("e1", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 0}))
+    assert invalid.value.code == "INVALID_EVENT_PAYLOAD"
+    result = machine.apply(event("e2", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 30}))
+    assert result.notifications[0]["delay_sec"] == 30
+    assert machine.schedule["tasks"][0]["status"] == "DELAYED"

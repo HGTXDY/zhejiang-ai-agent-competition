@@ -12,6 +12,14 @@ from typing import Any
 
 ALLOWED_EVENTS = {"TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE"}
 LOCKED_STATUSES = {"RUNNING", "COMPLETED", "LOCKED"}
+# Explicit transition policy: execution events cannot skip the lifecycle start.
+# A replan may mark pending work as exceptional when a device disappears, but
+# completion and delay reports require work that has actually started.
+EVENT_ALLOWED_STATES = {
+    "TASK_COMPLETED": {"RUNNING", "DELAYED"},
+    "TASK_DELAYED": {"RUNNING"},
+    "DEVICE_UNAVAILABLE": {"PENDING", "RUNNING", "DELAYED"},
+}
 
 
 class EventError(ValueError):
@@ -68,10 +76,7 @@ class ExecutionStateMachine:
 
     def _complete(self, event_id: str, task_id: str) -> EventResult:
         task = self._task(task_id)
-        if task["status"] == "COMPLETED":
-            raise EventError("INVALID_STATE_TRANSITION", f"Task {task_id} is already completed")
-        if task["status"] == "CANCELLED":
-            raise EventError("INVALID_STATE_TRANSITION", f"Cancelled task {task_id} cannot complete")
+        self._assert_event_state("TASK_COMPLETED", task)
         task["status"] = "COMPLETED"
         task["locked"] = True
         affected = tuple(self._dependents(task_id))
@@ -79,7 +84,10 @@ class ExecutionStateMachine:
 
     def _delay(self, event_id: str, task_id: str, delay_sec: int) -> EventResult:
         task = self._task(task_id)
+        self._assert_event_state("TASK_DELAYED", task)
         self._assert_mutable(task)
+        if isinstance(delay_sec, bool) or not isinstance(delay_sec, int) or delay_sec < 1:
+            raise EventError("INVALID_EVENT_PAYLOAD", "delay_sec must be a positive integer")
         task["status"] = "DELAYED"
         affected = tuple(self._dependents(task_id))
         notification = {
@@ -94,7 +102,7 @@ class ExecutionStateMachine:
         for task in self._tasks.values():
             if device_id not in task.get("assigned_resources", []):
                 continue
-            if task.get("status") in {"COMPLETED", "CANCELLED"}:
+            if task.get("status") not in EVENT_ALLOWED_STATES["DEVICE_UNAVAILABLE"]:
                 continue
             if task.get("locked") or task.get("status") in LOCKED_STATUSES:
                 # The task remains unchanged; the replan layer must preserve it.
@@ -134,6 +142,15 @@ class ExecutionStateMachine:
     def _assert_mutable(self, task: dict[str, Any]) -> None:
         if task.get("locked") or task.get("status") in LOCKED_STATUSES:
             raise EventError("TASK_LOCKED", f"Task {task['task_id']} cannot be moved")
+
+    def _assert_event_state(self, event_type: str, task: dict[str, Any]) -> None:
+        if task.get("status") not in EVENT_ALLOWED_STATES[event_type]:
+            allowed = ", ".join(sorted(EVENT_ALLOWED_STATES[event_type]))
+            raise EventError(
+                "INVALID_STATE_TRANSITION",
+                f"Event {event_type} cannot be applied to task {task['task_id']} "
+                f"in state {task.get('status')}; allowed states: {allowed}",
+            )
 
     def _dependents(self, task_id: str) -> list[str]:
         return [
