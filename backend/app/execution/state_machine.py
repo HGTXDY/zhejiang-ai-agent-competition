@@ -84,8 +84,8 @@ class ExecutionStateMachine:
 
     def _delay(self, event_id: str, task_id: str, delay_sec: int) -> EventResult:
         task = self._task(task_id)
-        self._assert_event_state("TASK_DELAYED", task)
         self._assert_mutable(task)
+        self._assert_event_state("TASK_DELAYED", task)
         if isinstance(delay_sec, bool) or not isinstance(delay_sec, int) or delay_sec < 1:
             raise EventError("INVALID_EVENT_PAYLOAD", "delay_sec must be a positive integer")
         task["status"] = "DELAYED"
