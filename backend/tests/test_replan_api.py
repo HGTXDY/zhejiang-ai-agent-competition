@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api import app
+from app.replan import REGISTRY, SCHEMAS
+from jsonschema import Draft202012Validator
 from app.scheduler import schedule
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,3 +76,32 @@ def test_replan_rejects_schedule_mismatch():
     response = client.post("/v1/replans", json=body)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "SCHEDULE_MISMATCH"
+
+
+def test_replan_response_matches_contract():
+    request, previous = current_schedule()
+    body = {
+        "event": event("event-contract-1", previous["schedule_id"], "TASK_COMPLETED", {"task_id": previous["tasks"][0]["task_id"]}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 200
+    validator = Draft202012Validator(SCHEMAS["replan-response.schema.json"], registry=REGISTRY)
+    assert list(validator.iter_errors(response.json())) == []
+
+
+def test_replan_delay_moves_mutable_task_after_delay_floor():
+    request, previous = current_schedule()
+    task_id = previous["tasks"][0]["task_id"]
+    old_start = previous["tasks"][0]["start_offset_sec"]
+    body = {
+        "event": event("event-delay-1", previous["schedule_id"], "TASK_DELAYED", {"task_id": task_id, "delay_sec": 30}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 200
+    changed = next(task for task in response.json()["schedule"]["tasks"] if task["task_id"] == task_id)
+    assert changed["status"] == "DELAYED"
+    assert changed["start_offset_sec"] >= old_start + 30
