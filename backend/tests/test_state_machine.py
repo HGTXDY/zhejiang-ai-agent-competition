@@ -102,3 +102,30 @@ def test_delay_requires_positive_integer_and_running_task():
     result = machine.apply(event("e2", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 30}))
     assert result.notifications[0]["delay_sec"] == 30
     assert machine.schedule["tasks"][0]["status"] == "DELAYED"
+
+
+def test_running_task_changes_are_reported_instead_of_hidden_as_locked():
+    from app.execution import compare_schedules
+
+    previous = [{
+        "task_id": "running", "dish_id": "d", "status": "RUNNING", "locked": False,
+        "start_offset_sec": 100, "assigned_resources": ["stove_1"],
+    }]
+    current = [{
+        "task_id": "running", "dish_id": "d", "status": "RUNNING", "locked": False,
+        "start_offset_sec": 130, "assigned_resources": ["stove_2"],
+    }]
+    changes, metrics = compare_schedules(previous, current, notified_task_ids={"running"})
+    assert changes[0]["change_type"] == "RESOURCE_CHANGED"
+    assert metrics["resource_change_count"] == 1
+    assert metrics["start_offset_total_sec"] == 0
+    assert metrics["notified_task_change_count"] == 1
+
+
+def test_unchanged_running_task_is_explicitly_preserved():
+    from app.execution import compare_schedules
+
+    task = {"task_id": "running", "dish_id": "d", "status": "RUNNING", "locked": False, "start_offset_sec": 100, "assigned_resources": ["stove_1"]}
+    changes, metrics = compare_schedules([task], [task])
+    assert changes[0]["change_type"] == "LOCKED"
+    assert metrics["start_offset_total_sec"] == 0
