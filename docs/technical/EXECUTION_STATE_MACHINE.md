@@ -8,7 +8,7 @@
 
 - `TASK_COMPLETED`：任务变为 `COMPLETED` 并锁定；依赖它的后续任务列入重排影响范围；
 - `TASK_DELAYED`：可移动任务变为 `DELAYED`，返回受影响后继任务；具体时间调整由重排器完成；
-- `DEVICE_UNAVAILABLE`：占用该设备且尚未锁定的任务变为 `EXCEPTION`；已完成、运行中或显式锁定任务不被修改；
+- `DEVICE_UNAVAILABLE`：当前实现将占用该设备且处于 `RUNNING`、`DELAYED` 或 `LOCKED` 的任务标记为 `EXCEPTION`，返回这些任务的影响范围；`PENDING` 任务不在本次状态迁移中。`LOCKED` 任务仍不可移动，后续重排不得改写其历史排程；
 - `DISH_ADDED`：原子添加新的 `PENDING` 任务，重复任务 ID 或批次内重复会整体拒绝。
 
 ## 锁定规则
@@ -17,10 +17,11 @@
 
 ```text
 locked = true
-status = RUNNING
 status = COMPLETED
 status = LOCKED
 ```
+
+`RUNNING` 任务允许上报延迟并进入 `DELAYED`；它的已执行历史仍不可回写。
 
 事件具有幂等保护：同一个 `event_id` 只能成功应用一次，错误会返回稳定错误码。
 

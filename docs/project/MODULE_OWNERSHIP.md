@@ -39,7 +39,7 @@
 | 负责人 | Issue | 写入范围 | 并行关系 |
 |---|---|---|---|
 | HGTXDY | T-001 领域 Schema 与样例 | `contracts/`、契约文档 | 不依赖后端脚手架 |
-| cbiiro97977 | T-003 后端工程与质量基线 | `src/`、`tests/`、`pyproject.toml`、后端 CI | 不定义业务 Schema |
+| cbiiro97977 | T-003 后端工程与质量基线 | `backend/app/`、`backend/tests/`、`backend/requirements.txt`、后端 CI | 不定义业务 Schema |
 
 合并时如同一文档发生轻微冲突，由后合并方基于最新 `main` 处理；业务契约以 T-001 为准，工程布局以 T-003 为准。
 

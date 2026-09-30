@@ -25,14 +25,14 @@ flowchart LR
 |---|---|---|
 | 后端 | Python 3.12、FastAPI、Pydantic v2 | 与 OR-Tools 生态匹配，Schema 和 OpenAPI 生成方便 |
 | 调度 | Google OR-Tools CP-SAT | 支持区间变量、资源互斥、可选任务和多目标约束 |
-| 前端 | React 19、TypeScript、Vite | 类型明确、组件生态成熟，便于双人并行开发 |
-| 可视化 | Apache ECharts Custom Series | 可实现资源轨道甘特图、状态和重排差异 |
+| 前端 | React 18、TypeScript、Vite | 与当前可运行控制台一致，类型明确，便于双人并行开发 |
+| 可视化 | 当前为 React/CSS 自研资源轨道视图 | 无额外图表运行时依赖，先满足 M1 甘特图与状态展示 |
 | 存储 | 开发期 SQLite；接口保持可替换 | 两人团队运维成本低，满足演示与状态持久化 |
 | 测试 | pytest、Hypothesis、Vitest、Playwright | 覆盖约束、属性测试、组件和关键端到端流程 |
 | 质量 | Ruff、mypy、ESLint、Prettier | 自动化格式、静态检查和类型检查 |
 | 部署 | Docker Compose | 统一评测和本地环境 |
 
-技术栈在首次实现前通过 ADR 最终确认；若调整，不改变模块接口和验收标准。
+上表是当前仓库已落地或已冻结的基线；新增依赖或替换技术栈必须通过 ADR/PR 评审，不改变模块接口和验收标准。
 
 ## 3. 分层与模块边界
 
@@ -42,17 +42,7 @@ flowchart LR
 
 禁止：依赖 FastAPI、数据库、LLM SDK 或前端结构。
 
-建议目录：
-
-```text
-backend/app/domain/
-├── recipe.py
-├── resource.py
-├── schedule.py
-├── event.py
-├── notification.py
-└── enums.py
-```
+当前实现：领域对象由 V1 JSON Schema、fixture 和各模块的类型/校验函数共同承载；尚未建立独立 `backend/app/domain/` 包。新增领域模型时必须先更新 `contracts/v1/`，再在 `backend/app/` 中按模块落地，禁止在文档中把规划目录写成已存在目录。
 
 ### 3.2 `parser` 菜谱解析
 
@@ -115,9 +105,9 @@ backend/app/domain/
 
 每个事件包含：`event_id`、`schedule_id`、`event_type`、`task_id`、事件发生时间、实际数据和幂等键。
 
-### 3.6 `replanner` 动态重排
+### 3.6 动态重排（规划中的 API 能力）
 
-职责：基于当前执行快照生成未来计划，不重写历史。
+当前仓库已有 `execution` 状态迁移与排程差异基础函数，但尚未提供独立 `replanner` 包或完整动态重排 API。后续实现必须基于当前执行快照生成未来计划，不重写历史。
 
 规则：
 
@@ -149,34 +139,28 @@ backend/app/domain/
 ```text
 backend/
 ├── app/
-│   ├── api/
-│   ├── domain/
-│   ├── parser/
-│   ├── validation/
-│   ├── scheduler/
-│   ├── execution/
-│   ├── replanner/
-│   ├── notification/
-│   └── infrastructure/
+│   ├── parser/          # 菜谱结构化解析适配器
+│   ├── validation/      # Schema、业务规则和结果校验
+│   ├── scheduler/       # OR-Tools CP-SAT 调度
+│   ├── execution/       # 状态机、事件和重排
+│   ├── metrics/         # 多目标指标
+│   ├── api.py           # FastAPI 应用工厂
+│   └── main.py          # ASGI 入口
 ├── tests/
-└── pyproject.toml
+├── requirements.txt
+└── requirements-parser.txt
 frontend/
 ├── src/
 │   ├── api/
 │   ├── components/
-│   ├── features/
-│   ├── pages/
+│   ├── mock/
 │   └── types/
+├── public/demo/
 └── package.json
-data/
-├── fixtures/
-├── schemas/
-└── expected/
-evaluation/
-├── parsing/
-├── scheduling/
-├── replanning/
-└── performance/
+contracts/v1/             # 版本化 Schema、样例与业务规则
+fixtures/v1/              # 调度与验收 fixture
+data/annotations/         # 标注模板、gold、review 和 reports
+docs/                     # 产品、项目、技术和赛题文档
 ```
 
 ## 5. 横向质量要求
@@ -186,4 +170,4 @@ evaluation/
 - 日志不得包含 API Key 或完整敏感 Prompt；
 - 相同输入、配置和随机种子下，核心排程结果应稳定；
 - 每个 P0 模块必须有正常、边界、无解和超时测试；
-- CI 至少运行格式检查、类型检查、单元测试和敏感信息检查。
+- CI 运行契约校验、后端全量测试、前端类型检查/构建和敏感信息检查。
