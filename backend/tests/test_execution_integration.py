@@ -49,7 +49,9 @@ def test_execution_events_are_api_consumable_as_one_product_loop() -> None:
     assert completed_body["schedule"]["tasks"][0]["locked"] is True
 
     delayed_current = copy.deepcopy(completed_body["schedule"])
-    delayed_task = next(task for task in delayed_current["tasks"] if task["status"] not in {"COMPLETED", "LOCKED"})
+    delayed_task = next(task for task in delayed_current["tasks"] if task["task_id"] != current["tasks"][0]["task_id"])
+    delayed_task["status"] = "RUNNING"
+    delayed_task["locked"] = False
     delayed = client.post(
         "/v1/replans",
         json=replan_body(event(delayed_current["schedule_id"], "TASK_DELAYED", {"task_id": delayed_task["task_id"], "delay_sec": 60}, "delay"), delayed_current, request),
