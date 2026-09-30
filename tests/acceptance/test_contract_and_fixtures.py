@@ -66,12 +66,52 @@ def test_m1_scenario_expectations_are_explicit():
 
 
 
+def _assigned_device_compatibility_errors(request: dict, result: dict) -> list[str]:
+    """Independently verify assigned devices satisfy each task requirement."""
+    devices = {device["device_id"]: device for device in request["device_config"]["devices"]}
+    definitions = {task["task_id"]: task for task in request["tasks"]}
+    errors: list[str] = []
+
+    for item in result["tasks"]:
+        requirement = definitions[item["task_id"]].get("device_requirement")
+        if requirement is None:
+            continue
+        assigned_devices = [resource_id for resource_id in item["assigned_resources"] if resource_id in devices]
+        if not assigned_devices:
+            errors.append(f"missing assigned device: {item['task_id']}")
+            continue
+
+        def matches(device: dict) -> bool:
+            capabilities = device.get("capabilities", {})
+            temperature = requirement.get("temperature_c")
+            minimum = capabilities.get("temperature_min_c")
+            maximum = capabilities.get("temperature_max_c")
+            temperature_ok = (
+                temperature is None
+                or (minimum is None or temperature >= minimum)
+                and (maximum is None or temperature <= maximum)
+            )
+            return (
+                device.get("available", True)
+                and device.get("device_type") == requirement["device_type"]
+                and (requirement.get("mode") is None or requirement["mode"] in capabilities.get("modes", []))
+                and temperature_ok
+                and device.get("capacity_units", 0) >= requirement["capacity_units"]
+            )
+
+        incompatible = [resource_id for resource_id in assigned_devices if not matches(devices[resource_id])]
+        if incompatible:
+            assigned = ", ".join(incompatible)
+            errors.append(f"assigned device incompatible: {item['task_id']} -> {assigned}")
+    return errors
+
+
 def _independent_hard_constraint_errors(request: dict, result: dict) -> list[str]:
     """Re-check hard constraints from request/result, not scheduler metrics."""
     definitions = {task["task_id"]: task for task in request["tasks"]}
     devices = {device["device_id"]: device for device in request["device_config"]["devices"]}
     scheduled = {task["task_id"]: task for task in result["tasks"]}
-    errors: list[str] = []
+    errors: list[str] = _assigned_device_compatibility_errors(request, result)
 
     for task_id, definition in definitions.items():
         item = scheduled.get(task_id)
@@ -176,3 +216,17 @@ def test_acceptance_independently_rejects_tampered_schedule_even_with_clean_metr
     errors = _independent_hard_constraint_errors(request, result)
     assert any(error.startswith("dependency violation") for error in errors)
     assert any(error.startswith("operator capacity conflict") for error in errors)
+
+
+def test_acceptance_rejects_task_assigned_to_incompatible_device():
+    from app.scheduler import schedule
+
+    request = _load(FIXTURE_DIR / "four-dish-normal.json")
+    result = schedule(request)
+    fish = next(task for task in result["tasks"] if task["task_id"] == "fish_steam")
+    fish["assigned_resources"] = ["oven_1", "operator_1"]
+    result["metrics"]["device_conflicts"] = 0
+    result["metrics"]["dependency_violations"] = 0
+
+    errors = _independent_hard_constraint_errors(request, result)
+    assert "assigned device incompatible: fish_steam -> oven_1" in errors
