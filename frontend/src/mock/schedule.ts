@@ -23,6 +23,7 @@ export const initialSchedule: DashboardSchedule = {
   validation: { valid: true, errors: [] },
   timings_ms: { parse: 0, validation: 1, solve: 42, notification: 0, total: 43 },
   notifications: [],
+  resources,
   tasks: [
     { task_id: 'ribs_prepare', dish_id: 'braised_ribs', action: '排骨预处理', start_offset_sec: 0, end_offset_sec: 180, assigned_resources: ['operator_1'], status: 'COMPLETED', locked: true, notification_points: [] },
     { task_id: 'ribs_blanch', dish_id: 'braised_ribs', action: '排骨焯水', start_offset_sec: 180, end_offset_sec: 780, assigned_resources: ['stove_1', 'operator_1'], status: 'RUNNING', locked: true, notification_points: [] },
