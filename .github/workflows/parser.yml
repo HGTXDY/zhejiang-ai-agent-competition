@@ -1,0 +1,25 @@
+name: Parser tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/parser/**"
+      - "backend/tests/test_parser_adapter.py"
+      - "backend/requirements-parser.txt"
+      - "contracts/v1/schemas/**"
+      - ".github/workflows/parser.yml"
+
+jobs:
+  parser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install parser dependencies
+        run: python -m pip install -r backend/requirements-parser.txt pytest
+      - name: Run parser tests
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_parser_adapter.py
