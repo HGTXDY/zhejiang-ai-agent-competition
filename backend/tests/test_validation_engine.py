@@ -130,3 +130,17 @@ def test_result_validation_rejects_incompatible_shared_steamer_settings():
     checked = validate_schedule_result(request, result)
     assert not checked.valid
     assert any(error.code == "DEVICE_MODE_CONFLICT" for error in checked.errors)
+
+
+def test_request_validation_distinguishes_missing_device_type_from_unavailable_type():
+    request = load_fixture("four-dish-normal.json")
+    request["tasks"][4]["device_requirement"]["device_type"] = "dishwasher"
+    result = validate_schedule_request(request)
+    assert result.errors[0].code == "DEVICE_TYPE_UNAVAILABLE"
+    assert "not configured" in result.errors[0].message
+
+    request = load_fixture("four-dish-normal.json")
+    request["device_config"]["devices"][2]["available"] = False
+    result = validate_schedule_request(request)
+    assert result.errors[0].code == "DEVICE_TYPE_UNAVAILABLE"
+    assert "all devices" in result.errors[0].message

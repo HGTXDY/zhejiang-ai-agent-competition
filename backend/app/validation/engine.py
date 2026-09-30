@@ -133,12 +133,18 @@ def _device_capability_error(task: Any, devices: Iterable[Any]) -> tuple[str, st
     requirement = task.device_requirement
     if requirement is None:
         return None
-    available = [device for device in devices if device.available]
-    typed = [device for device in available if device.device_type == requirement.device_type]
+    all_devices = list(devices)
+    typed = [device for device in all_devices if device.device_type == requirement.device_type]
     if not typed:
         return (
             "DEVICE_TYPE_UNAVAILABLE",
-            f"no available device of type {requirement.device_type} for task {task.task_id}",
+            f"device type {requirement.device_type} is not configured for task {task.task_id}",
+        )
+    available = [device for device in typed if device.available]
+    if not available:
+        return (
+            "DEVICE_TYPE_UNAVAILABLE",
+            f"all devices of type {requirement.device_type} are unavailable for task {task.task_id}",
         )
     mode_compatible = [
         device for device in typed
