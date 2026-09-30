@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MetricCard } from './MetricCard'
 import { Timeline } from './Timeline'
-import { api } from '../api/client'
+import { api, apiMode } from '../api/client'
 import { initialSchedule } from '../mock/schedule'
 import type { DashboardSchedule, DashboardTask, Notification, ScheduleDiff } from '../types/contracts'
 import '../styles.css'
@@ -10,7 +10,8 @@ const diffLabel: Record<ScheduleDiff['type'], string> = { ADDED: '新增', REMOV
 interface ExecutionDashboardProps { initialSchedule?: DashboardSchedule }
 
 export default function ExecutionDashboard({ initialSchedule: providedSchedule }: ExecutionDashboardProps) {
-  const [schedule, setSchedule] = useState(providedSchedule ?? initialSchedule), [tasks, setTasks] = useState(providedSchedule?.tasks ?? initialSchedule.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | DashboardTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
+  const seed = providedSchedule ?? initialSchedule
+  const [schedule, setSchedule] = useState(seed), [tasks, setTasks] = useState(seed.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | DashboardTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
   const selected = tasks.find(task => task.task_id === selectedId) ?? null, completed = tasks.filter(task => task.status === 'COMPLETED').length, progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0
   const metrics = useMemo(() => ({ ...schedule.metrics, makespan_sec: tasks.reduce((max, task) => Math.max(max, task.end_offset_sec), 0) }), [schedule.metrics, tasks]), resources = schedule.resources, filteredTasks = tasks.filter(task => statusFilter === 'ALL' || task.status === statusFilter)
   useEffect(() => {
@@ -18,6 +19,7 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule }
   }, [tasks, selectedId])
   useEffect(() => {
     if (providedSchedule) { setLoading(false); return }
+    if (apiMode === 'MOCK API') { setLoading(false); return }
     let active = true
     void api.getSchedule().then(nextSchedule => { if (active) { setSchedule(nextSchedule); setTasks(nextSchedule.tasks) } }).catch(() => { if (active) setError('排程加载失败，当前展示本地演示数据') }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -27,26 +29,22 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule }
     if (!selected || selected.locked) { setToast('该任务已锁定，不能直接修改'); return }
     setLoading(true); setError(null)
     try {
-      const result = await api.postEvent(selected, next)
-      setTasks(current => current.map(task => task.task_id === selected.task_id ? result.task : task)); setSchedule(current => ({ ...current, tasks: current.tasks.map(task => task.task_id === selected.task_id ? result.task : task) }))
-      pushNotification(result.notification)
+      const result = await api.postEvent(selected, next, schedule)
+      setSchedule(result.schedule); setTasks(result.schedule.tasks); setDiffs(result.changes); result.notifications.forEach(pushNotification)
     } catch { setError('事件上报失败，请重试'); setToast('事件上报失败') } finally { setLoading(false) }
   }
   async function handleAddDish() {
     setLoading(true); setError(null)
     try {
-      const result = await api.addDish()
-      setTasks(current => [...current, ...result.tasks])
-      setSchedule(current => ({ ...current, tasks: [...current.tasks, ...result.tasks] }))
-      setDiffs(result.tasks.map(task => ({ task_id: task.task_id, action: task.action, type: 'ADDED', detail: '临时加菜加入排程' })))
-      pushNotification(result.notification)
+      const result = await api.addDish(schedule)
+      setSchedule(result.schedule); setTasks(result.schedule.tasks); setDiffs(result.changes); result.notifications.forEach(pushNotification)
     } catch { setError('临时加菜失败，请重试'); setToast('临时加菜失败') } finally { setLoading(false) }
   }
   return <main className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="session"><span className="status-dot" />厨房 A · 午餐批次 <b>12:30</b><button className="avatar">H</button></div></header><div className="content">
-    <section className="hero"><div><p className="eyebrow">智能烹饪调度中心 / 2026.09.26 <span className="demo-label">DEMO MODE · MOCK API</span></p><h1>让每一道菜，<em>刚好同时出锅。</em></h1><p className="subtitle">{new Set(tasks.map(task => task.dish_id)).size} 道菜 · 单人操作 · 自动调度中</p></div><div className="hero-actions"><button className="secondary" onClick={() => { setSchedule(initialSchedule); setTasks(initialSchedule.tasks); setDiffs([]); setNotifications([]); setError(null); setToast('已重置为初始排程') }}>重置排程</button><button className="secondary" onClick={() => setToast('已保存排程快照')}>查看快照</button><button className="primary" disabled={loading} onClick={() => void handleAddDish()}>＋ 临时加菜</button></div></section>
+    <section className="hero"><div><p className="eyebrow">智能烹饪调度中心 / 2026.09.26 <span className="demo-label">{apiMode}</span></p><h1>让每一道菜，<em>刚好同时出锅。</em></h1><p className="subtitle">{new Set(tasks.map(task => task.dish_id)).size} 道菜 · 单人操作 · 自动调度中</p></div><div className="hero-actions"><button className="secondary" onClick={() => { setSchedule(seed); setTasks(seed.tasks); setDiffs([]); setNotifications([]); setError(null); setToast('已重置为初始排程') }}>重置排程</button><button className="secondary" onClick={() => setToast('已保存排程快照')}>查看快照</button><button className="primary" disabled={loading} onClick={() => void handleAddDish()}>＋ 临时加菜</button></div></section>
     {error && <div className="error-banner">⚠ {error}</div>}
       <section className="metric-grid"><MetricCard label="当前进度" value={`${progress}%`} hint={`${completed} / ${tasks.length} 个任务完成`} /><MetricCard label="预计完成" value="12:41" hint="较目标晚 01:20" accent="cyan" /><MetricCard label="出锅时间差" value={`${Math.floor(metrics.finish_spread_sec / 60)}′`} hint="目标 ≤ 5′" accent="violet" /><MetricCard label="约束状态" value={`${metrics.device_conflicts} 冲突`} hint="设备 · 依赖 · 人工" accent="green" /></section>
-    <section className="toolbar"><div className="filter-group"><span>资源</span><select value={resourceFilter} onChange={event => setResourceFilter(event.target.value)}><option value="all">全部轨道</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label}</option>)}</select><span>状态</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}><option value="ALL">全部任务</option>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><span className="toolbar-note">Mock API · V1 contract compatible</span></section>
+    <section className="toolbar"><div className="filter-group"><span>资源</span><select value={resourceFilter} onChange={event => setResourceFilter(event.target.value)}><option value="all">全部轨道</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label}</option>)}</select><span>状态</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}><option value="ALL">全部任务</option>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><span className="toolbar-note">V1 contract · {apiMode}</span></section>
     <Timeline tasks={tasks} resources={resources} selectedId={selectedId} resourceFilter={resourceFilter} onSelect={task => setSelectedId(task.task_id)} />
     <section className="lower-grid"><div className="task-panel"><div className="panel-heading"><div><p className="eyebrow">TASK QUEUE</p><h2>任务队列</h2></div><span>{filteredTasks.length} / {tasks.length} tasks</span></div><div className="task-list">{filteredTasks.map(task => <button className={`task-row ${selectedId === task.task_id ? 'active' : ''}`} key={task.task_id} onClick={() => setSelectedId(task.task_id)}><span className={`task-icon ${task.status.toLowerCase()}`}>{task.status === 'COMPLETED' ? '✓' : task.status === 'RUNNING' ? '◉' : task.status === 'EXCEPTION' ? '!' : '·'}</span><span className="task-main"><b>{task.action}</b><small>{task.task_id} · {task.assigned_resources.join(' / ') || '人工操作'}</small></span><span className={`badge ${task.status.toLowerCase()}`}>{statusLabel[task.status]}</span></button>)}</div></div><aside className="detail-panel"><p className="eyebrow">SELECTED TASK</p>{selected ? <><h2>{selected.action}</h2><p className="detail-id">{selected.task_id} {selected.locked ? '· LOCKED' : ''}</p><div className="detail-row"><span>执行窗口</span><b>{Math.floor(selected.start_offset_sec / 60)}:{String(selected.start_offset_sec % 60).padStart(2, '0')} — {Math.floor(selected.end_offset_sec / 60)}:{String(selected.end_offset_sec % 60).padStart(2, '0')}</b></div><div className="detail-row"><span>资源</span><b>{selected.assigned_resources.join(' · ') || '主厨操作'}</b></div><div className="event-actions"><button disabled={loading} onClick={() => void updateSelected('COMPLETED')}>完成任务</button><button disabled={loading} onClick={() => void updateSelected('DELAYED')}>上报延迟</button><button className="danger" disabled={loading} onClick={() => void updateSelected('EXCEPTION')}>设备异常</button></div></> : <p>选择一个任务查看详情</p>}</aside></section>
     <section className="insight-grid"><div className="notification-panel"><div className="panel-heading"><div><p className="eyebrow">EVENT LOG</p><h2>事件通知</h2></div><span>{notifications.length} 条</span></div>{notifications.length ? notifications.map(item => <div className={`notification ${item.level === 'error' ? 'danger' : item.level}`} key={item.notification_id}><span className="notification-mark" /><div><b>{item.action}</b><small>{item.message} · {new Date(item.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small></div></div>) : <p className="empty-state">暂无新事件，操作任务后将在这里显示。</p>}</div><div className="diff-panel"><div className="panel-heading"><div><p className="eyebrow">REPLAN DIFF</p><h2>重排差异</h2></div><span>{diffs.length} changes</span></div>{diffs.length ? diffs.map(diff => <div className="diff-row" key={diff.task_id}><span className={`diff-type ${diff.type.toLowerCase()}`}>{diffLabel[diff.type]}</span><b>{diff.action}</b><small>{diff.detail}</small></div>) : <p className="empty-state">触发临时加菜后展示重排前后差异。</p>}</div></section>

@@ -50,3 +50,32 @@ export interface Notification {
 }
 export interface TimelineResource { id: string; label: string; tone: 'gold' | 'cyan' | 'violet' | 'slate' }
 export interface ScheduleDiff { task_id: string; action: string; type: DiffType; detail: string }
+
+export type ReplanEventType = 'TASK_COMPLETED' | 'TASK_DELAYED' | 'DISH_ADDED' | 'DEVICE_UNAVAILABLE'
+export interface ScheduleRequest { [key: string]: unknown }
+export interface ReplanEvent {
+  schema_version: '1.0'
+  event_id: string
+  schedule_id: string
+  event_type: ReplanEventType
+  occurred_at: string
+  payload: Record<string, unknown>
+}
+export interface ReplanChange {
+  task_id: string
+  change_type: DiffType | 'CANCELLED'
+  old_start_offset_sec?: number | null
+  new_start_offset_sec?: number | null
+  old_resources?: string[]
+  new_resources?: string[]
+}
+export interface ReplanResponse {
+  schema_version: '1.0'
+  event_id: string
+  previous_schedule_id: string
+  schedule: ScheduleResponse
+  changes: ReplanChange[]
+  disruption_metrics: { start_offset_total_sec: number; resource_change_count: number; order_change_count: number; notified_task_change_count: number }
+  disruption_score: number
+}
+export interface ReplanResult { schedule: DashboardSchedule; changes: ScheduleDiff[]; notifications: Notification[]; disruptionScore: number }
