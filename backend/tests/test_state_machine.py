@@ -35,10 +35,16 @@ def test_locked_task_cannot_be_delayed():
     assert exc.value.code == "TASK_LOCKED"
 
 
-def test_device_unavailable_marks_only_mutable_affected_tasks():
-    machine = ExecutionStateMachine(schedule())
+def test_device_unavailable_marks_running_and_locked_tasks_but_not_pending():
+    current = schedule()
+    current["tasks"][1]["status"] = "RUNNING"
+    current["tasks"][1]["locked"] = False
+    current["tasks"][2]["status"] = "LOCKED"
+    current["tasks"][2]["locked"] = True
+    machine = ExecutionStateMachine(current)
     result = machine.apply(event("e1", "DEVICE_UNAVAILABLE", {"device_id": "stove_1"}))
     assert set(result.affected_task_ids) == {"cook", "other"}
+    assert machine.schedule["tasks"][0]["status"] == "PENDING"
     assert all(task["status"] == "EXCEPTION" for task in machine.schedule["tasks"] if task["task_id"] in {"cook", "other"})
 
 

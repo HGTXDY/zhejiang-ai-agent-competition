@@ -18,7 +18,7 @@ LOCKED_STATUSES = {"COMPLETED", "LOCKED"}
 EVENT_ALLOWED_STATES = {
     "TASK_COMPLETED": {"RUNNING", "DELAYED"},
     "TASK_DELAYED": {"RUNNING"},
-    "DEVICE_UNAVAILABLE": {"PENDING", "RUNNING", "DELAYED"},
+    "DEVICE_UNAVAILABLE": {"RUNNING", "DELAYED", "LOCKED"},
 }
 
 
@@ -103,9 +103,6 @@ class ExecutionStateMachine:
             if device_id not in task.get("assigned_resources", []):
                 continue
             if task.get("status") not in EVENT_ALLOWED_STATES["DEVICE_UNAVAILABLE"]:
-                continue
-            if task.get("locked") or task.get("status") in LOCKED_STATUSES:
-                # The task remains unchanged; the replan layer must preserve it.
                 continue
             task["status"] = "EXCEPTION"
             affected.append(task["task_id"])
