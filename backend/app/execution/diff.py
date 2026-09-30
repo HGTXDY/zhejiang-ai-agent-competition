@@ -29,16 +29,26 @@ def compare_schedules(
             change_type = "ADDED"
         elif after is None:
             change_type = "REMOVED"
-        elif before.get("locked") or before.get("status") in {"RUNNING", "COMPLETED", "LOCKED"}:
-            change_type = "LOCKED"
-        elif before.get("assigned_resources", []) != after.get("assigned_resources", []):
-            change_type = "RESOURCE_CHANGED"
-            resource_changes += 1
-        elif before.get("start_offset_sec") != after.get("start_offset_sec"):
-            change_type = "MOVED"
-            start_offset_total += abs(after["start_offset_sec"] - before["start_offset_sec"])
         else:
-            change_type = "UNCHANGED"
+            resources_changed = before.get("assigned_resources", []) != after.get("assigned_resources", [])
+            start_changed = before.get("start_offset_sec") != after.get("start_offset_sec")
+            truly_locked = before.get("locked") or before.get("status") in {"COMPLETED", "LOCKED"}
+            if truly_locked:
+                # A completed/explicitly locked task must never be changed by a
+                # candidate schedule; the replan service rejects that candidate.
+                change_type = "LOCKED"
+            elif resources_changed:
+                change_type = "RESOURCE_CHANGED"
+                resource_changes += 1
+            elif start_changed:
+                change_type = "MOVED"
+                start_offset_total += abs(after["start_offset_sec"] - before["start_offset_sec"])
+            elif before.get("status") == "RUNNING":
+                # A running task with identical placement was preserved. Mark it
+                # explicitly so the UI can distinguish it from a pending no-op.
+                change_type = "LOCKED"
+            else:
+                change_type = "UNCHANGED"
         if change_type not in {"UNCHANGED", "LOCKED"} and task_id in notified_task_ids:
             notified_changes += 1
         changes.append(
