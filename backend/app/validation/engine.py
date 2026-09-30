@@ -109,8 +109,16 @@ def _request_invariants(request: ScheduleRequest) -> list[ValidationIssue]:
                 errors.append(ValidationIssue("MANUAL_SEGMENT_OVERLAP", "manual segments overlap", f"tasks[{task.task_id}].manual_segments[{index}]"))
             previous_end = max(previous_end, segment_end)
 
-        if task.device_requirement is not None and not _compatible_devices(task, request.device_config.devices):
-            errors.append(ValidationIssue("NO_COMPATIBLE_DEVICE", f"no compatible available device for task {task.task_id}", f"tasks[{task.task_id}].device_requirement"))
+        if task.device_requirement is not None:
+            capability_error = _device_capability_error(task, request.device_config.devices)
+            if capability_error is not None:
+                errors.append(
+                    ValidationIssue(
+                        capability_error[0],
+                        capability_error[1],
+                        f"tasks[{task.task_id}].device_requirement",
+                    )
+                )
 
     for device in request.device_config.devices:
         minimum = device.capabilities.temperature_min_c
@@ -118,6 +126,49 @@ def _request_invariants(request: ScheduleRequest) -> list[ValidationIssue]:
         if minimum is not None and maximum is not None and minimum > maximum:
             errors.append(ValidationIssue("INVALID_TEMPERATURE_RANGE", "temperature_min_c must not exceed temperature_max_c", f"device_config.devices[{device.device_id}].capabilities"))
     return _dedupe(errors)
+
+
+def _device_capability_error(task: Any, devices: Iterable[Any]) -> tuple[str, str] | None:
+    """Return the most specific reason no available device can satisfy a task."""
+    requirement = task.device_requirement
+    if requirement is None:
+        return None
+    available = [device for device in devices if device.available]
+    typed = [device for device in available if device.device_type == requirement.device_type]
+    if not typed:
+        return (
+            "DEVICE_TYPE_UNAVAILABLE",
+            f"no available device of type {requirement.device_type} for task {task.task_id}",
+        )
+    mode_compatible = [
+        device for device in typed
+        if requirement.mode is None or requirement.mode in device.capabilities.modes
+    ]
+    if not mode_compatible:
+        return (
+            "DEVICE_MODE_UNSUPPORTED",
+            f"mode {requirement.mode} is unsupported for task {task.task_id}",
+        )
+    temperature_compatible = [
+        device
+        for device in mode_compatible
+        if requirement.temperature_c is None
+        or (
+            (device.capabilities.temperature_min_c is None or requirement.temperature_c >= device.capabilities.temperature_min_c)
+            and (device.capabilities.temperature_max_c is None or requirement.temperature_c <= device.capabilities.temperature_max_c)
+        )
+    ]
+    if not temperature_compatible:
+        return (
+            "DEVICE_TEMPERATURE_UNSUPPORTED",
+            f"temperature {requirement.temperature_c}C is unsupported for task {task.task_id}",
+        )
+    if not any(device.capacity_units >= requirement.capacity_units for device in temperature_compatible):
+        return (
+            "DEVICE_CAPACITY_INSUFFICIENT",
+            f"capacity {requirement.capacity_units} exceeds all compatible devices for task {task.task_id}",
+        )
+    return None
 
 
 def _compatible_devices(task: Any, devices: Iterable[Any]) -> list[str]:
@@ -202,6 +253,8 @@ def _resource_conflicts(request: ScheduleRequest, scheduled_tasks: list[dict[str
                 f"device {device_id}",
             )
         )
+        if device.device_type in {"steamer", "oven"}:
+            errors.extend(_shared_device_setting_conflicts(device_id, intervals, definitions))
 
     operator_intervals: list[tuple[int, int, int, str]] = []
     for item in scheduled_tasks:
@@ -224,6 +277,39 @@ def _resource_conflicts(request: ScheduleRequest, scheduled_tasks: list[dict[str
             "manual operator capacity",
         )
     )
+    return errors
+
+
+def _shared_device_setting_conflicts(
+    device_id: str,
+    intervals: list[tuple[int, int, int, str]],
+    definitions: dict[str, Any],
+) -> list[ValidationIssue]:
+    """Reject overlapping steamer/oven tasks with incompatible settings."""
+    events: list[tuple[int, int, str]] = []
+    for start, end, _demand, task_id in intervals:
+        if start < end:
+            events.append((start, 1, task_id))
+            events.append((end, -1, task_id))
+    active: set[str] = set()
+    errors: list[ValidationIssue] = []
+    for timestamp, delta, task_id in sorted(events, key=lambda item: (item[0], item[1])):
+        if delta < 0:
+            active.discard(task_id)
+            continue
+        active.add(task_id)
+        current = [definitions[item_id] for item_id in active]
+        modes = {task.device_requirement.mode for task in current if task.device_requirement and task.device_requirement.mode}
+        temperatures = {task.device_requirement.temperature_c for task in current if task.device_requirement and task.device_requirement.temperature_c is not None}
+        if len(modes) > 1 or len(temperatures) > 1:
+            errors.append(
+                ValidationIssue(
+                    "DEVICE_MODE_CONFLICT",
+                    f"overlapping tasks on {device_id} require incompatible modes or temperatures at offset {timestamp}s",
+                    "tasks",
+                )
+            )
+            break
     return errors
 
 

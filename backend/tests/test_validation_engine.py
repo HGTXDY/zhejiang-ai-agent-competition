@@ -37,7 +37,7 @@ def test_request_validation_rejects_dependency_and_resource_errors():
     unavailable = load_fixture("four-dish-resource-insufficient.json")
     result = validate_schedule_request(unavailable)
     assert not result.valid
-    assert any(error.code == "NO_COMPATIBLE_DEVICE" for error in result.errors)
+    assert any(error.code == "DEVICE_TYPE_UNAVAILABLE" for error in result.errors)
 
 
 def test_result_validation_detects_duration_dependency_and_device_conflicts():
@@ -94,3 +94,39 @@ def test_result_validation_detects_three_way_device_capacity_conflict():
     checked = validate_schedule_result(request, result)
     assert not checked.valid
     assert any(error.code == "DEVICE_CAPACITY_CONFLICT" for error in checked.errors)
+
+
+def test_request_validation_returns_specific_capability_error_codes():
+    request = load_fixture("four-dish-normal.json")
+    request["tasks"][4]["device_requirement"]["mode"] = "high_pressure_steam"
+    result = validate_schedule_request(request)
+    assert any(error.code == "DEVICE_MODE_UNSUPPORTED" for error in result.errors)
+
+    request = load_fixture("four-dish-normal.json")
+    request["tasks"][4]["device_requirement"]["temperature_c"] = 300
+    result = validate_schedule_request(request)
+    assert any(error.code == "DEVICE_TEMPERATURE_UNSUPPORTED" for error in result.errors)
+
+    request = load_fixture("four-dish-normal.json")
+    request["tasks"][4]["device_requirement"]["capacity_units"] = 3
+    result = validate_schedule_request(request)
+    assert any(error.code == "DEVICE_CAPACITY_INSUFFICIENT" for error in result.errors)
+
+
+def test_result_validation_rejects_incompatible_shared_steamer_settings():
+    request = load_fixture("four-dish-normal.json")
+    second = copy.deepcopy(request["tasks"][4])
+    second["task_id"] = "fish_steam_second"
+    second["device_requirement"]["mode"] = "different_steam"
+    second["predecessors"] = []
+    request["tasks"].append(second)
+    # Keep the new mode valid at request level by adding it to the device capability.
+    request["device_config"]["devices"][2]["capabilities"]["modes"].append("different_steam")
+    result = schedule(request)
+    first = next(item for item in result["tasks"] if item["task_id"] == "fish_steam")
+    extra = {**first, "task_id": "fish_steam_second", "start_offset_sec": first["start_offset_sec"], "end_offset_sec": first["end_offset_sec"]}
+    result["tasks"].append(extra)
+    extra["assigned_resources"] = ["steamer_1"]
+    checked = validate_schedule_result(request, result)
+    assert not checked.valid
+    assert any(error.code == "DEVICE_MODE_CONFLICT" for error in checked.errors)
