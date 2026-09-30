@@ -6,13 +6,13 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
-from app.replan import ReplanError, replan
 from app.scheduler import schedule
 from scripts.validate_contracts import validate_schedule_request_business_rules
 
@@ -40,8 +40,16 @@ REQUEST_VALIDATOR = Draft202012Validator(
 
 
 def _error_response(request_id: str, code: str, message: str, details: list[dict[str, Any]]) -> JSONResponse:
+    status_codes = {
+        "INVALID_INPUT": 422,
+        "VALIDATION_FAILED": 422,
+        "SCHEDULE_INFEASIBLE": 409,
+        "EVENT_CONFLICT": 409,
+        "SOLVER_TIMEOUT": 504,
+        "INTERNAL_ERROR": 500,
+    }
     return JSONResponse(
-        status_code=422 if code in {"INVALID_INPUT", "VALIDATION_FAILED"} else 409,
+        status_code=status_codes.get(code, 500),
         content={
             "schema_version": "1.0",
             "request_id": request_id,
@@ -64,6 +72,30 @@ def _schema_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="CookFlow Scheduling API", version="1.0")
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        details = [
+            {
+                "code": "REQUEST_VALIDATION_ERROR",
+                "message": error.get("msg", "Invalid request"),
+                "path": ".".join(str(part) for part in error.get("loc", ())) or "$",
+            }
+            for error in exc.errors()
+        ]
+        request_id = request.headers.get("X-Request-ID", "unknown")
+        return _error_response(request_id, "INVALID_INPUT", "Request body is invalid", details)
+
+    @app.exception_handler(Exception)
+    async def internal_error(request: Request, exc: Exception) -> JSONResponse:
+        # Do not expose exception details to clients; keep the response contract stable.
+        request_id = request.headers.get("X-Request-ID", "unknown")
+        return _error_response(
+            request_id,
+            "INTERNAL_ERROR",
+            "An unexpected internal error occurred",
+            [],
+        )
     configured_origins = os.getenv(
         "COOKFLOW_CORS_ORIGINS",
         "http://localhost:5173,http://127.0.0.1:5173",
@@ -111,21 +143,6 @@ def create_app() -> FastAPI:
                 "error": {"code": "SCHEDULE_INFEASIBLE", "message": "No feasible schedule found", "details": result["validation"]["errors"]},
             })
         return result
-
-    @app.post("/v1/replans")
-    def create_replan(envelope: dict[str, Any]) -> Any:
-        event_id = str(envelope.get("event", {}).get("event_id") or "unknown")
-        try:
-            return replan(envelope)
-        except ReplanError as error:
-            return JSONResponse(
-                status_code=error.status_code,
-                content={
-                    "schema_version": "1.0",
-                    "request_id": event_id,
-                    "error": {"code": error.code, "message": error.message, "details": error.details},
-                },
-            )
 
     return app
 
