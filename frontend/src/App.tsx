@@ -1,46 +1,81 @@
-import { useEffect, useMemo, useState } from 'react'
-import { MetricCard } from './components/MetricCard'
-import { Timeline } from './components/Timeline'
-import { api } from './api/client'
-import { initialSchedule, resources } from './mock/schedule'
-import type { DashboardTask, Notification, ScheduleDiff } from './types/contracts'
+import { useMemo, useState } from 'react'
+import ExecutionDashboard from './components/ExecutionDashboard'
+import { recipeCatalog } from './mock/recipes'
+import { createMockSchedule, validateProductRequest } from './mock/product'
+import type { DashboardSchedule } from './types/contracts'
+import type { KitchenConfig, RecipeSummary } from './types/product'
 import './styles.css'
-const statusLabel: Record<DashboardTask['status'], string> = { PENDING: '待执行', LOCKED: '已锁定', RUNNING: '执行中', DELAYED: '已延迟', COMPLETED: '已完成', EXCEPTION: '异常', CANCELLED: '已取消' }
-const diffLabel: Record<ScheduleDiff['type'], string> = { ADDED: '新增', REMOVED: '移除', MOVED: '移动', RESOURCE_CHANGED: '资源变更', UNCHANGED: '未变化', LOCKED: '已锁定' }
+
+type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
+
+const defaultKitchen: KitchenConfig = { target_time: '12:30', operator_count: 1, stove_count: 1, steamer_count: 1, oven_count: 1 }
+
 export default function App() {
-  const [tasks, setTasks] = useState(initialSchedule.tasks), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selectedId, setSelectedId] = useState<string | null>('ribs_blanch'), [resourceFilter, setResourceFilter] = useState('all'), [statusFilter, setStatusFilter] = useState<'ALL' | DashboardTask['status']>('ALL'), [notifications, setNotifications] = useState<Notification[]>([]), [diffs, setDiffs] = useState<ScheduleDiff[]>([]), [toast, setToast] = useState('排程已生成，等待执行事件')
-  const selected = tasks.find(task => task.task_id === selectedId) ?? null, completed = tasks.filter(task => task.status === 'COMPLETED').length, progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0
-  const metrics = useMemo(() => ({ ...initialSchedule.metrics, makespan_sec: tasks.reduce((max, task) => Math.max(max, task.end_offset_sec), 0) }), [tasks]), filteredTasks = tasks.filter(task => statusFilter === 'ALL' || task.status === statusFilter)
-  useEffect(() => {
-    if (!tasks.some(task => task.task_id === selectedId)) setSelectedId(tasks[0]?.task_id ?? null)
-  }, [tasks, selectedId])
-  useEffect(() => { let active = true; void api.getSchedule().then(schedule => { if (active) setTasks(schedule.tasks) }).catch(() => { if (active) setError('排程加载失败，当前展示本地演示数据') }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])
-  function pushNotification(notification: Notification) { setNotifications(current => [notification, ...current].slice(0, 5)); setToast(notification.action) }
-  async function updateSelected(next: 'COMPLETED' | 'DELAYED' | 'EXCEPTION') {
-    if (!selected || selected.locked) { setToast('该任务已锁定，不能直接修改'); return }
-    setLoading(true); setError(null)
-    try {
-      const result = await api.postEvent(selected, next)
-      setTasks(current => current.map(task => task.task_id === selected.task_id ? result.task : task))
-      pushNotification(result.notification)
-    } catch { setError('事件上报失败，请重试'); setToast('事件上报失败') } finally { setLoading(false) }
+  const [step, setStep] = useState<ProductStep>('recipes')
+  const [query, setQuery] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>(recipeCatalog.slice(0, 3).map(recipe => recipe.recipe_id))
+  const [kitchen, setKitchen] = useState(defaultKitchen)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [schedule, setSchedule] = useState<DashboardSchedule | null>(null)
+
+  const selected = useMemo(() => selectedIds.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)).filter(Boolean) as RecipeSummary[], [selectedIds])
+  const visibleRecipes = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return normalized ? recipeCatalog.filter(recipe => `${recipe.name}${recipe.preview}`.toLowerCase().includes(normalized)) : recipeCatalog
+  }, [query])
+
+  function toggleRecipe(recipe: RecipeSummary) {
+    setValidationErrors([])
+    setSelectedIds(current => current.includes(recipe.recipe_id) ? current.filter(id => id !== recipe.recipe_id) : current.length < 5 ? [...current, recipe.recipe_id] : current)
   }
-  async function handleAddDish() {
-    setLoading(true); setError(null)
-    try {
-      const result = await api.addDish()
-      setTasks(current => [...current, ...result.tasks])
-      setDiffs(result.tasks.map(task => ({ task_id: task.task_id, action: task.action, type: 'ADDED', detail: '临时加菜加入排程' })))
-      pushNotification(result.notification)
-    } catch { setError('临时加菜失败，请重试'); setToast('临时加菜失败') } finally { setLoading(false) }
+
+  async function continueToKitchen() {
+    const result = await validateProductRequest({ recipe_ids: selectedIds, kitchen })
+    setValidationErrors(result.errors)
+    setWarnings(result.warnings)
+    if (result.valid) setStep('kitchen')
   }
-  return <main className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="session"><span className="status-dot" />厨房 A · 午餐批次 <b>12:30</b><button className="avatar">H</button></div></header><div className="content">
-    <section className="hero"><div><p className="eyebrow">智能烹饪调度中心 / 2026.09.26 <span className="demo-label">DEMO MODE · MOCK API</span></p><h1>让每一道菜，<em>刚好同时出锅。</em></h1><p className="subtitle">{new Set(tasks.map(task => task.dish_id)).size} 道菜 · 单人操作 · 自动调度中</p></div><div className="hero-actions"><button className="secondary" onClick={() => { setTasks(initialSchedule.tasks); setDiffs([]); setNotifications([]); setError(null); setToast('已重置为初始排程') }}>重置排程</button><button className="secondary" onClick={() => setToast('已保存排程快照')}>查看快照</button><button className="primary" disabled={loading} onClick={() => void handleAddDish()}>＋ 临时加菜</button></div></section>
-    {error && <div className="error-banner">⚠ {error}</div>}
-      <section className="metric-grid"><MetricCard label="当前进度" value={`${progress}%`} hint={`${completed} / ${tasks.length} 个任务完成`} /><MetricCard label="预计完成" value="12:41" hint="较目标晚 01:20" accent="cyan" /><MetricCard label="出锅时间差" value={`${Math.floor(metrics.finish_spread_sec / 60)}′`} hint="目标 ≤ 5′" accent="violet" /><MetricCard label="约束状态" value={`${metrics.device_conflicts} 冲突`} hint="设备 · 依赖 · 人工" accent="green" /></section>
-    <section className="toolbar"><div className="filter-group"><span>资源</span><select value={resourceFilter} onChange={event => setResourceFilter(event.target.value)}><option value="all">全部轨道</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label}</option>)}</select><span>状态</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}><option value="ALL">全部任务</option>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div><span className="toolbar-note">Mock API · V1 contract compatible</span></section>
-    <Timeline tasks={tasks} resources={resources} selectedId={selectedId} resourceFilter={resourceFilter} onSelect={task => setSelectedId(task.task_id)} />
-    <section className="lower-grid"><div className="task-panel"><div className="panel-heading"><div><p className="eyebrow">TASK QUEUE</p><h2>任务队列</h2></div><span>{filteredTasks.length} / {tasks.length} tasks</span></div><div className="task-list">{filteredTasks.map(task => <button className={`task-row ${selectedId === task.task_id ? 'active' : ''}`} key={task.task_id} onClick={() => setSelectedId(task.task_id)}><span className={`task-icon ${task.status.toLowerCase()}`}>{task.status === 'COMPLETED' ? '✓' : task.status === 'RUNNING' ? '◉' : task.status === 'EXCEPTION' ? '!' : '·'}</span><span className="task-main"><b>{task.action}</b><small>{task.task_id} · {task.assigned_resources.join(' / ') || '人工操作'}</small></span><span className={`badge ${task.status.toLowerCase()}`}>{statusLabel[task.status]}</span></button>)}</div></div><aside className="detail-panel"><p className="eyebrow">SELECTED TASK</p>{selected ? <><h2>{selected.action}</h2><p className="detail-id">{selected.task_id} {selected.locked ? '· LOCKED' : ''}</p><div className="detail-row"><span>执行窗口</span><b>{Math.floor(selected.start_offset_sec / 60)}:{String(selected.start_offset_sec % 60).padStart(2, '0')} — {Math.floor(selected.end_offset_sec / 60)}:{String(selected.end_offset_sec % 60).padStart(2, '0')}</b></div><div className="detail-row"><span>资源</span><b>{selected.assigned_resources.join(' · ') || '主厨操作'}</b></div><div className="event-actions"><button disabled={loading} onClick={() => void updateSelected('COMPLETED')}>完成任务</button><button disabled={loading} onClick={() => void updateSelected('DELAYED')}>上报延迟</button><button className="danger" disabled={loading} onClick={() => void updateSelected('EXCEPTION')}>设备异常</button></div></> : <p>选择一个任务查看详情</p>}</aside></section>
-    <section className="insight-grid"><div className="notification-panel"><div className="panel-heading"><div><p className="eyebrow">EVENT LOG</p><h2>事件通知</h2></div><span>{notifications.length} 条</span></div>{notifications.length ? notifications.map(item => <div className={`notification ${item.level === 'error' ? 'danger' : item.level}`} key={item.notification_id}><span className="notification-mark" /><div><b>{item.action}</b><small>{item.message} · {new Date(item.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small></div></div>) : <p className="empty-state">暂无新事件，操作任务后将在这里显示。</p>}</div><div className="diff-panel"><div className="panel-heading"><div><p className="eyebrow">REPLAN DIFF</p><h2>重排差异</h2></div><span>{diffs.length} changes</span></div>{diffs.length ? diffs.map(diff => <div className="diff-row" key={diff.task_id}><span className={`diff-type ${diff.type.toLowerCase()}`}>{diffLabel[diff.type]}</span><b>{diff.action}</b><small>{diff.detail}</small></div>) : <p className="empty-state">触发临时加菜后展示重排前后差异。</p>}</div></section>
-    <div className="toast"><span className="toast-dot" />{toast}<span className="toast-time">刚刚</span></div></div></main>
+
+  async function continueToConfirm() {
+    const result = await validateProductRequest({ recipe_ids: selectedIds, kitchen })
+    setValidationErrors(result.errors)
+    setWarnings(result.warnings)
+    if (result.valid) setStep('confirm')
+  }
+
+  async function createSchedule() {
+    setLoading(true)
+    setValidationErrors([])
+    const result = await createMockSchedule({ recipe_ids: selectedIds, kitchen })
+    setWarnings(result.validation.warnings)
+    setValidationErrors(result.validation.errors)
+    if (result.validation.valid) { setSchedule(result.schedule); setStep('result') }
+    setLoading(false)
+  }
+
+  if (step === 'result' && schedule) return <ExecutionDashboard />
+
+  return <main className="product-shell">
+    <header className="product-topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="product-status"><span className="status-dot" />厨房 A · 智能排程助手</div></header>
+    <section className="product-content">
+      <div className="product-heading"><div><p className="eyebrow">SMART COOKING PLANNER / V1</p><h1>从选菜开始，安排一场准时的晚餐。</h1><p className="subtitle">灶序会根据菜品、设备和目标开饭时间，生成可执行的烹饪排程。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道菜已选</span></div></div>
+      <nav className="stepper" aria-label="排程创建步骤">{[['recipes', '01', '选择菜谱'], ['kitchen', '02', '配置厨房'], ['confirm', '03', '解析确认'], ['result', '04', '查看排程']].map(([key, number, label], index) => <button key={key} className={`${step === key ? 'active' : ''} ${['recipes', 'kitchen', 'confirm', 'result'].indexOf(step) > index ? 'done' : ''}`} onClick={() => key !== 'result' && setStep(key as ProductStep)}><b>{number}</b><span>{label}</span></button>)}</nav>
+      {validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}
+      {warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}
+      {step === 'recipes' && <section className="planner-grid"><div className="planner-main"><div className="section-toolbar"><div><p className="eyebrow">RECIPE LIBRARY</p><h2>选择今天要做的菜</h2></div><label className="search-box">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索菜名或步骤" /></label></div><div className="recipe-grid">{visibleRecipes.map(recipe => <button key={recipe.recipe_id} className={`recipe-card ${selectedIds.includes(recipe.recipe_id) ? 'selected' : ''}`} onClick={() => toggleRecipe(recipe)}><span className="recipe-check">{selectedIds.includes(recipe.recipe_id) ? '✓' : '+'}</span><div><strong>{recipe.name}</strong><small>{recipe.step_count} 个步骤 · {recipe.tags.join(' · ')}</small><p>{recipe.preview}</p></div></button>)}</div></div><aside className="selection-panel"><p className="eyebrow">SELECTED DISHES</p><h2>本次排程</h2>{selected.length ? selected.map((recipe, index) => <div className="selected-recipe" key={recipe.recipe_id}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div><button onClick={() => toggleRecipe(recipe)}>×</button></div>) : <p className="empty-state">请选择 3～5 道菜</p>}<button className="primary wide" disabled={selected.length < 3} onClick={() => void continueToKitchen()}>下一步：配置厨房 →</button></aside></section>}
+      {step === 'kitchen' && <KitchenStep kitchen={kitchen} setKitchen={setKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} selected={selected} />}
+      {step === 'confirm' && <ConfirmStep kitchen={kitchen} selected={selected} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} loading={loading} />}
+    </section>
+  </main>
+}
+
+function KitchenStep({ kitchen, setKitchen, onBack, onNext, selected }: { kitchen: KitchenConfig; setKitchen: (value: KitchenConfig) => void; onBack: () => void; onNext: () => void; selected: RecipeSummary[] }) {
+  const update = (key: keyof KitchenConfig, value: string) => setKitchen({ ...kitchen, [key]: key === 'target_time' ? value : Number(value) })
+  return <section className="setup-grid"><div className="setup-main"><p className="eyebrow">KITCHEN CONFIGURATION</p><h2>告诉我你的厨房现在有什么</h2><p className="setup-copy">排程 Agent 会把设备能力和操作员数量作为硬约束，不会安排无法执行的任务。</p><div className="config-card"><label>目标开饭时间<input type="time" value={kitchen.target_time} onChange={event => update('target_time', event.target.value)} /></label><label>操作员人数<input type="number" min="1" max="4" value={kitchen.operator_count} onChange={event => update('operator_count', event.target.value)} /></label><label>灶眼数量<input type="number" min="0" max="8" value={kitchen.stove_count} onChange={event => update('stove_count', event.target.value)} /></label><label>蒸箱数量<input type="number" min="0" max="4" value={kitchen.steamer_count} onChange={event => update('steamer_count', event.target.value)} /></label><label>烤箱数量<input type="number" min="0" max="4" value={kitchen.oven_count} onChange={event => update('oven_count', event.target.value)} /></label></div><div className="setup-actions"><button className="secondary" onClick={onBack}>← 返回选菜</button><button className="primary" onClick={onNext}>下一步：解析确认 →</button></div></div><aside className="selection-panel"><p className="eyebrow">PLAN INPUT</p><h2>{selected.length} 道菜</h2>{selected.map(recipe => <div className="selected-recipe compact" key={recipe.recipe_id}><span>✓</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div></div>)}</aside></section>
+}
+
+function ConfirmStep({ kitchen, selected, onBack, onSubmit, loading }: { kitchen: KitchenConfig; selected: RecipeSummary[]; onBack: () => void; onSubmit: () => void; loading: boolean }) {
+  return <section className="confirm-grid"><div className="confirm-main"><p className="eyebrow">PARSER REVIEW</p><h2>确认菜谱解析结果</h2><p className="setup-copy">当前展示的是 V1 菜谱解析确认卡。低置信字段在提交前需要人工确认，避免把错误输入交给调度器。</p>{selected.map(recipe => <article className="parse-card" key={recipe.recipe_id}><div><strong>{recipe.name}</strong><span className="parse-status">待确认</span></div><p>步骤 1：{recipe.preview}</p><small>共 {recipe.step_count} 个原始步骤 · 设备能力将在调度校验阶段再次检查</small></article>)}</div><aside className="selection-panel summary-panel"><p className="eyebrow">SCHEDULE SUMMARY</p><h2>准备生成排程</h2><div className="summary-row"><span>目标开饭</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>操作员</span><b>{kitchen.operator_count} 人</b></div><div className="summary-row"><span>设备</span><b>{kitchen.stove_count} 灶 · {kitchen.steamer_count} 蒸箱 · {kitchen.oven_count} 烤箱</b></div><div className="setup-actions"><button className="secondary" onClick={onBack}>← 返回配置</button><button className="primary wide" disabled={loading} onClick={onSubmit}>{loading ? '排程计算中…' : '生成初始排程 →'}</button></div></aside></section>
 }
