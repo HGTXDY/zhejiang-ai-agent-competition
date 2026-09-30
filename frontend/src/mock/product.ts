@@ -22,11 +22,17 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
   const validation = await validateProductRequest(request)
   if (!validation.valid) return { schedule: initialSchedule, validation }
   const selected = request.recipe_ids.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)!).filter(Boolean)
+  const resources = [
+    ...Array.from({ length: request.kitchen.stove_count }, (_, index) => `stove_${index + 1}`),
+    ...Array.from({ length: request.kitchen.steamer_count }, (_, index) => `steamer_${index + 1}`),
+    ...Array.from({ length: request.kitchen.oven_count }, (_, index) => `oven_${index + 1}`),
+  ]
   const tasks: DashboardTask[] = selected.flatMap((recipe, index) => {
     const base = index * 480
+    const resource = resources[index % resources.length]
     return [
       { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, action: `${recipe.name}备料`, start_offset_sec: base, end_offset_sec: base + 150, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [index % 3 === 0 ? 'stove_1' : index % 3 === 1 ? 'steamer_1' : 'oven_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource], status: 'PENDING', locked: false, notification_points: [] },
     ]
   })
   const schedule: DashboardSchedule = {

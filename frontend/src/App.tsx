@@ -55,7 +55,7 @@ export default function App() {
     setLoading(false)
   }
 
-  if (step === 'result' && schedule) return <ExecutionDashboard />
+  if (step === 'result' && schedule) return <ExecutionDashboard initialSchedule={schedule} />
 
   return <main className="product-shell">
     <header className="product-topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="product-status"><span className="status-dot" />厨房 A · 智能排程助手</div></header>
