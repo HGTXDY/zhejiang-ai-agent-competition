@@ -1,5 +1,5 @@
 import { addDish, getSchedule, postEvent } from '../mock/api'
-import type { DashboardSchedule, DashboardTask, Notification, ScheduleResponse } from '../types/contracts'
+import type { DashboardSchedule, DashboardTask, Notification, ScheduleResponse, TimelineResource } from '../types/contracts'
 
 export interface CookFlowApi {
   getSchedule(): Promise<DashboardSchedule>
@@ -7,9 +7,28 @@ export interface CookFlowApi {
   addDish(): Promise<{ tasks: DashboardTask[]; notification: Notification }>
 }
 
+const RESOURCE_LABELS: Record<string, string> = {
+  operator_1: '操作员 · 主厨',
+  stove_burner_1: '灶具 · 01',
+  stove_burner_2: '灶具 · 02',
+  steamer_1: '蒸箱 · 01',
+  oven_1: '烤箱 · 01',
+  refrigerator_1: '冰箱 · 01',
+  dishwasher_1: '洗碗机 · 01',
+  range_hood_1: '烟机 · 01',
+  water_purifier_1: '净水机 · 01',
+}
+const RESOURCE_TONES: TimelineResource['tone'][] = ['gold', 'cyan', 'violet', 'slate']
+
 function toDashboardSchedule(response: ScheduleResponse): DashboardSchedule {
+  const resourceIds = [...new Set(response.tasks.flatMap(task => task.assigned_resources))]
   return {
     ...response,
+    resources: resourceIds.map((id, index) => ({
+      id,
+      label: RESOURCE_LABELS[id] ?? id,
+      tone: RESOURCE_TONES[index % RESOURCE_TONES.length],
+    })),
     tasks: response.tasks.map(task => ({ ...task, action: task.task_id })),
   }
 }
