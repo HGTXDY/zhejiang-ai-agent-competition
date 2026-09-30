@@ -64,6 +64,64 @@ def test_m1_scenario_expectations_are_explicit():
     assert by_file["four-dish-mode-conflict.json"] == ["DEVICE_MODE_UNSUPPORTED"]
 
 
+
+
+def _independent_hard_constraint_errors(request: dict, result: dict) -> list[str]:
+    """Re-check hard constraints from request/result, not scheduler metrics."""
+    definitions = {task["task_id"]: task for task in request["tasks"]}
+    devices = {device["device_id"]: device for device in request["device_config"]["devices"]}
+    scheduled = {task["task_id"]: task for task in result["tasks"]}
+    errors: list[str] = []
+
+    for task_id, definition in definitions.items():
+        item = scheduled.get(task_id)
+        if item is None:
+            errors.append(f"missing task: {task_id}")
+            continue
+        if item["end_offset_sec"] - item["start_offset_sec"] != definition["duration_sec"]:
+            errors.append(f"duration mismatch: {task_id}")
+        for predecessor in definition["predecessors"]:
+            if scheduled[predecessor]["end_offset_sec"] > item["start_offset_sec"]:
+                errors.append(f"dependency violation: {task_id}")
+
+    for device_id, device in devices.items():
+        intervals = []
+        for item in result["tasks"]:
+            if device_id not in item["assigned_resources"]:
+                continue
+            definition = definitions[item["task_id"]]
+            demand = definition.get("device_requirement", {}).get("capacity_units", 1)
+            intervals.append((item["start_offset_sec"], item["end_offset_sec"], demand))
+        events = [(start, 1, demand) for start, end, demand in intervals]
+        events += [(end, -1, demand) for start, end, demand in intervals]
+        active = 0
+        for _, delta, demand in sorted(events, key=lambda event: (event[0], event[1])):
+            active += delta * demand
+            if active > device["capacity_units"]:
+                errors.append(f"device capacity conflict: {device_id}")
+                break
+
+    manual_intervals = []
+    for item in result["tasks"]:
+        definition = definitions[item["task_id"]]
+        if not definition.get("manual_required"):
+            continue
+        segments = definition.get("manual_segments") or [{"offset_sec": 0, "duration_sec": definition["manual_duration_sec"]}]
+        for segment in segments:
+            manual_intervals.append((
+                item["start_offset_sec"] + segment["offset_sec"],
+                item["start_offset_sec"] + segment["offset_sec"] + segment["duration_sec"],
+            ))
+    events = [(start, 1) for start, end in manual_intervals]
+    events += [(end, -1) for start, end in manual_intervals]
+    active = 0
+    for _, delta in sorted(events, key=lambda event: (event[0], event[1])):
+        active += delta
+        if active > request["device_config"]["operator_count"]:
+            errors.append("operator capacity conflict")
+            break
+    return errors
+
 def test_normal_fixture_runs_validator_scheduler_and_result_checks():
     """Exercise the M1 happy path instead of only validating input documents."""
     from app.scheduler import schedule
@@ -80,6 +138,7 @@ def test_normal_fixture_runs_validator_scheduler_and_result_checks():
     assert result["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
     assert result["metrics"]["device_conflicts"] == 0
     assert result["metrics"]["dependency_violations"] == 0
+    assert _independent_hard_constraint_errors(request, result) == []
     by_id = {task["task_id"]: task for task in result["tasks"]}
     for task in request["tasks"]:
         for predecessor in task["predecessors"]:
@@ -101,3 +160,19 @@ def test_resource_insufficient_fixture_reaches_scheduler_and_returns_infeasible(
     assert result["solver"]["status"] == "INFEASIBLE"
     assert result["validation"]["valid"] is False
     assert result["validation"]["errors"][0]["code"] == "NO_COMPATIBLE_DEVICE"
+
+
+def test_acceptance_independently_rejects_tampered_schedule_even_with_clean_metrics():
+    from app.scheduler import schedule
+
+    request = _load(FIXTURE_DIR / "four-dish-normal.json")
+    result = schedule(request)
+    by_id = {task["task_id"]: task for task in result["tasks"]}
+    by_id["fish_steam"]["start_offset_sec"] = by_id["fish_prepare"]["start_offset_sec"]
+    by_id["fish_steam"]["end_offset_sec"] = by_id["fish_steam"]["start_offset_sec"] + request["tasks"][4]["duration_sec"]
+    result["metrics"]["device_conflicts"] = 0
+    result["metrics"]["dependency_violations"] = 0
+
+    errors = _independent_hard_constraint_errors(request, result)
+    assert any(error.startswith("dependency violation") for error in errors)
+    assert any(error.startswith("operator capacity conflict") for error in errors)
