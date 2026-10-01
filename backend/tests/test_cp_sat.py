@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from app.metrics import finish_spread_sec, max_continuous_manual_sec
 from app.scheduler import schedule
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,3 +37,24 @@ def test_solver_status_error_distinguishes_unknown_from_infeasible():
     assert unknown["solver"]["status"] == "UNKNOWN"
     assert unknown["validation"]["errors"][0]["code"] == "SOLVER_TIMEOUT"
     assert infeasible["solver"]["status"] == "INFEASIBLE"
+
+
+def test_multi_objective_metrics_are_computed_from_schedule() -> None:
+    """The scheduler reports real objective metrics, not hardcoded zeros.
+
+    `finish_spread_sec` and `max_continuous_manual_sec` must be derived from the
+    scheduled tasks and agree with the shared `app.metrics` implementation, so the
+    multi-objective solver integration and the metric layer stay in lock-step.
+    """
+    request = load_fixture("four-dish-normal.json")
+    result = schedule(request)
+    assert result["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
+    scheduled_tasks = result["tasks"]
+
+    assert result["metrics"]["finish_spread_sec"] == finish_spread_sec(scheduled_tasks)
+    assert result["metrics"]["max_continuous_manual_sec"] == max_continuous_manual_sec(
+        scheduled_tasks, request["tasks"]
+    )
+    # The four dishes share one operator, so the metrics are non-trivial.
+    assert result["metrics"]["finish_spread_sec"] > 0
+    assert result["metrics"]["max_continuous_manual_sec"] > 0

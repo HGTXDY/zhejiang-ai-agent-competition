@@ -2,6 +2,14 @@
 
 The scheduler accepts schema-shaped dictionaries after validation. It deliberately
 keeps validation and API concerns outside this module so it can be tested alone.
+
+The objective is lexicographic, matching the V1 hierarchy documented in
+`app.metrics.multi_objective.hierarchical_objective`: hard constraints are always
+enforced by the model, then finish spread (同出锅时间差), makespan (总时长), and
+continuous manual operation are minimised in that order via staged solves. The
+reported `max_continuous_manual_sec` is the true merge-gap metric from
+`app.metrics`, while the third solve stage optimises the operator busy span as a
+tractable proxy for continuous manual load.
 """
 from __future__ import annotations
 
@@ -10,6 +18,8 @@ from time import perf_counter
 from typing import Any
 
 from ortools.sat.python import cp_model
+
+from app.metrics import finish_spread_sec, max_continuous_manual_sec
 
 
 @dataclass(frozen=True)
@@ -83,6 +93,9 @@ def schedule(
     locked_tasks = locked_tasks or {}
     start_floors = start_floors or {}
     devices = request["device_config"]["devices"]
+    objective = request.get("objective") or {}
+    max_solve_time_sec = float(objective.get("max_solve_time_sec") or config.max_solve_time_sec)
+    manual_merge_gap_sec = int(objective.get("manual_merge_gap_sec") or 30)
     horizon = sum(task["duration_sec"] for task in tasks)
     model = cp_model.CpModel()
     starts: dict[str, cp_model.IntVar] = {}
@@ -91,6 +104,8 @@ def schedule(
     device_choices: dict[str, list[tuple[dict[str, Any], cp_model.BoolVar]]] = {}
     device_intervals: dict[str, list[tuple[cp_model.IntervalVar, int]]] = {}
     operator_intervals: list[tuple[cp_model.IntervalVar, int]] = []
+    manual_segment_starts: list[cp_model.IntVar] = []
+    manual_segment_ends: list[cp_model.IntVar] = []
 
     for task in tasks:
         task_id = task["task_id"]
@@ -143,6 +158,8 @@ def schedule(
                 manual_start, segment["duration_sec"], manual_end, f"manual_{task_id}_{index}"
             )
             operator_intervals.append((manual_interval, 1))
+            manual_segment_starts.append(manual_start)
+            manual_segment_ends.append(manual_end)
 
     for device_id, resource_intervals in device_intervals.items():
         device = next(item for item in devices if item["device_id"] == device_id)
@@ -158,42 +175,103 @@ def schedule(
             request["device_config"]["operator_count"],
         )
 
+    # Dish finish times and finish spread (max dish end - min dish end).
+    dish_ids = sorted({task["dish_id"] for task in tasks})
+    dish_ends: dict[str, cp_model.IntVar] = {}
+    for dish_id in dish_ids:
+        dish_ends[dish_id] = model.NewIntVar(0, horizon, f"dish_end_{dish_id}")
+        model.AddMaxEquality(
+            dish_ends[dish_id], [ends[task["task_id"]] for task in tasks if task["dish_id"] == dish_id]
+        )
+    finish_spread = model.NewIntVar(0, horizon, "finish_spread")
+    max_dish_end = model.NewIntVar(0, horizon, "max_dish_end")
+    min_dish_end = model.NewIntVar(0, horizon, "min_dish_end")
+    model.AddMaxEquality(max_dish_end, list(dish_ends.values()))
+    model.AddMinEquality(min_dish_end, list(dish_ends.values()))
+    model.Add(finish_spread == max_dish_end - min_dish_end)
+
     makespan = model.NewIntVar(0, horizon, "makespan")
     model.AddMaxEquality(makespan, list(ends.values()))
-    model.Minimize(makespan)
 
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = config.max_solve_time_sec
-    solver.parameters.num_search_workers = 1
-    solver.parameters.random_seed = config.seed
-    status = solver.Solve(model)
-    elapsed_ms = int((perf_counter() - started) * 1000)
-    status_name = _status_name(status)
-    if status_name in {"INFEASIBLE", "UNKNOWN"}:
+    # Operator busy span (max manual end - min manual start) as the tractable
+    # proxy for continuous manual operation.
+    max_manual_span = model.NewIntVar(0, horizon, "max_manual_span")
+    if manual_segment_starts:
+        manual_max_end = model.NewIntVar(0, horizon, "manual_max_end")
+        manual_min_start = model.NewIntVar(0, horizon, "manual_min_start")
+        model.AddMaxEquality(manual_max_end, manual_segment_ends)
+        model.AddMinEquality(manual_min_start, manual_segment_starts)
+        model.Add(max_manual_span == manual_max_end - manual_min_start)
+
+    deadline = perf_counter() + max_solve_time_sec
+
+    def solve_stage() -> tuple[cp_model.CpSolver | None, int]:
+        solver = cp_model.CpSolver()
+        remaining = deadline - perf_counter()
+        if remaining <= 0:
+            return None, cp_model.UNKNOWN
+        solver.parameters.max_time_in_seconds = remaining
+        solver.parameters.num_search_workers = 1
+        solver.parameters.random_seed = config.seed
+        return solver, solver.Solve(model)
+
+    # Stage 1: minimise finish spread (highest-priority soft objective).
+    model.Minimize(finish_spread)
+    solver, status = solve_stage()
+    if solver is None or status == cp_model.UNKNOWN:
         return _error_response(
             request,
             "SOLVER_TIMEOUT",
             "Solver did not produce a feasible result within the time limit",
-            elapsed_ms,
+            int((perf_counter() - started) * 1000),
             status="UNKNOWN",
-        ) if status_name == "UNKNOWN" else _error_response(
-            request, "NO_FEASIBLE_SCHEDULE", "No feasible schedule found", elapsed_ms, status="INFEASIBLE"
         )
+    if status == cp_model.INFEASIBLE:
+        return _error_response(request, "NO_FEASIBLE_SCHEDULE", "No feasible schedule found", int((perf_counter() - started) * 1000))
+    model.Add(finish_spread <= solver.Value(finish_spread))
+    final_solver = solver
+    all_optimal = status == cp_model.OPTIMAL
+    makespan_bound: int | None = None
+
+    # Stage 2: minimise makespan subject to the pinned finish spread.
+    model.ClearObjective()
+    model.Minimize(makespan)
+    solver, status = solve_stage()
+    if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
+        model.Add(makespan <= solver.Value(makespan))
+        makespan_bound = solver.BestObjectiveBound()
+        final_solver = solver
+        all_optimal = all_optimal and status == cp_model.OPTIMAL
+
+        # Stage 3: minimise operator busy span subject to the pinned spread and makespan.
+        model.ClearObjective()
+        model.Minimize(max_manual_span)
+        solver, status = solve_stage()
+        if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
+            final_solver = solver
+            all_optimal = all_optimal and status == cp_model.OPTIMAL
+        else:
+            all_optimal = False
+    else:
+        all_optimal = False
+
+    elapsed_ms = int((perf_counter() - started) * 1000)
+    status_name = "OPTIMAL" if all_optimal else "FEASIBLE"
 
     scheduled_tasks = []
     for task in tasks:
         task_id = task["task_id"]
         resources: list[str] = []
         if task_id in device_choices:
-            resources.extend(device["device_id"] for device, selected in device_choices[task_id] if solver.Value(selected))
+            resources.extend(device["device_id"] for device, selected in device_choices[task_id] if final_solver.Value(selected))
         if task.get("manual_required"):
             resources.append("operator_1")
         scheduled_tasks.append(
             {
                 "task_id": task_id,
                 "dish_id": task["dish_id"],
-                "start_offset_sec": solver.Value(starts[task_id]),
-                "end_offset_sec": solver.Value(ends[task_id]),
+                "start_offset_sec": final_solver.Value(starts[task_id]),
+                "end_offset_sec": final_solver.Value(ends[task_id]),
                 "assigned_resources": resources,
                 "status": "PENDING",
                 "locked": False,
@@ -201,19 +279,31 @@ def schedule(
             }
         )
 
-    dish_ends: dict[str, int] = {}
-    for task in scheduled_tasks:
-        dish_ends[task["dish_id"]] = max(dish_ends.get(task["dish_id"], 0), task["end_offset_sec"])
-    finish_values = list(dish_ends.values())
-    finish_spread = max(finish_values) - min(finish_values) if finish_values else 0
-    objective = solver.ObjectiveValue()
-    bound = solver.BestObjectiveBound()
+    finish_spread_value = finish_spread_sec(scheduled_tasks)
+    max_continuous_manual_value = max_continuous_manual_sec(
+        scheduled_tasks, tasks, merge_gap_sec=manual_merge_gap_sec
+    )
+    objective_value = final_solver.Value(makespan)
+    gap = max(0.0, objective_value - makespan_bound) if makespan_bound is not None else None
     return {
         "schema_version": "1.0",
         "request_id": request["request_id"],
         "schedule_id": f"{request['request_id']}_schedule",
-        "solver": {"status": status_name, "objective_value": objective, "best_bound": bound, "gap": max(0.0, objective - bound), "duration_ms": elapsed_ms},
-        "metrics": {"makespan_sec": solver.Value(makespan), "finish_spread_sec": finish_spread, "max_continuous_manual_sec": 0, "device_conflicts": 0, "dependency_violations": 0, "target_delay_sec": 0},
+        "solver": {
+            "status": status_name,
+            "objective_value": objective_value,
+            "best_bound": makespan_bound,
+            "gap": gap,
+            "duration_ms": elapsed_ms,
+        },
+        "metrics": {
+            "makespan_sec": objective_value,
+            "finish_spread_sec": finish_spread_value,
+            "max_continuous_manual_sec": max_continuous_manual_value,
+            "device_conflicts": 0,
+            "dependency_violations": 0,
+            "target_delay_sec": 0,
+        },
         "tasks": scheduled_tasks,
         "validation": {"valid": True, "errors": []},
         "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": 0, "total": elapsed_ms},
