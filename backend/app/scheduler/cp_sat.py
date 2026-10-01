@@ -7,9 +7,9 @@ The objective is lexicographic, matching the V1 hierarchy documented in
 `app.metrics.multi_objective.hierarchical_objective`: hard constraints are always
 enforced by the model, then finish spread (同出锅时间差), makespan (总时长), and
 continuous manual operation are minimised in that order via staged solves. The
-reported `max_continuous_manual_sec` is the true merge-gap metric from
-`app.metrics`, while the third solve stage optimises the operator busy span as a
-tractable proxy for continuous manual load.
+third stage models the V1 max-continuous-manual metric exactly (adjacent manual
+segments within `manual_merge_gap_sec` merge into one block), so the optimised
+quantity and the reported `max_continuous_manual_sec` are the same metric.
 """
 from __future__ import annotations
 
@@ -63,6 +63,96 @@ def _status_name(status: int) -> str:
     }.get(status, "UNKNOWN")
 
 
+def _add_continuous_manual_objective(
+    model: cp_model.CpModel,
+    segments: list[tuple[cp_model.IntVar, int, cp_model.IntVar]],
+    merge_gap_sec: int,
+    horizon: int,
+) -> cp_model.IntVar | None:
+    """Model the V1 max-continuous-manual metric exactly and return its variable.
+
+    Each segment is ``(start, duration, end)``. Two segments whose gap is at most
+    ``merge_gap_sec`` merge into one continuous block (the V1 contract), and the
+    metric is the longest block's span. ``same`` is the transitive closure of the
+    pairwise "gap <= merge_gap" relation, so a block's span is bounded by
+    ``continuous_manual >= end_j - start_i`` for every same-block pair ``(i, j)``.
+    The third solve stage therefore minimises the very quantity the response
+    reports, instead of the operator busy span, which is not equivalent.
+
+    Returns ``None`` when there are no segments (the metric is then 0).
+    """
+    m = len(segments)
+    if m == 0:
+        return None
+
+    continuous_manual = model.NewIntVar(0, horizon, "continuous_manual")
+    # Every segment is a length-1 block on its own.
+    for _, duration, _ in segments:
+        model.Add(continuous_manual >= duration)
+
+    if m == 1:
+        return continuous_manual
+
+    # `link[i][j]` = segment i ends before segment j starts and the gap between
+    # them is at most merge_gap_sec (i.e. the merge scan would join them).
+    link: dict[tuple[int, int], Any] = {}
+    for i in range(m):
+        start_i, _, end_i = segments[i]
+        for j in range(m):
+            if i == j:
+                continue
+            start_j = segments[j][0]
+            before = model.NewBoolVar(f"cm_before_{i}_{j}")
+            model.Add(end_i <= start_j).OnlyEnforceIf(before)
+            model.Add(end_i >= start_j + 1).OnlyEnforceIf(before.Not())
+            gap_ok = model.NewBoolVar(f"cm_gapok_{i}_{j}")
+            model.Add(start_j - end_i <= merge_gap_sec).OnlyEnforceIf(gap_ok)
+            model.Add(start_j - end_i >= merge_gap_sec + 1).OnlyEnforceIf(gap_ok.Not())
+            key = (i, j)
+            link[key] = model.NewBoolVar(f"cm_link_{i}_{j}")
+            model.Add(link[key] <= before)
+            model.Add(link[key] <= gap_ok)
+            model.Add(link[key] >= before + gap_ok - 1)
+
+    # `same` is the symmetric transitive closure of `link`: an equivalence
+    # relation grouping segments into the blocks the merge scan would produce.
+    same: dict[tuple[int, int], Any] = {}
+    for i in range(m):
+        for j in range(i + 1, m):
+            same[(i, j)] = model.NewBoolVar(f"cm_same_{i}_{j}")
+
+    def _same(a: int, b: int) -> Any:
+        if a == b:
+            return None  # reflexive: always true
+        if a > b:
+            a, b = b, a
+        return same[(a, b)]
+
+    for (i, j), var in same.items():
+        model.Add(var >= link[(i, j)])
+        model.Add(var >= link[(j, i)])
+    for a in range(m):
+        for b in range(m):
+            if b == a:
+                continue
+            for c in range(m):
+                if c == a or c == b:
+                    continue
+                model.Add(_same(a, c) >= _same(a, b) + _same(b, c) - 1)
+
+    # A block's span bounds the metric in both directions (either end may be the
+    # earlier one); the metric is minimised so it settles on the longest block.
+    for (i, j), var in same.items():
+        start_i = segments[i][0]
+        end_i = segments[i][2]
+        start_j = segments[j][0]
+        end_j = segments[j][2]
+        model.Add(continuous_manual >= end_j - start_i).OnlyEnforceIf(var)
+        model.Add(continuous_manual >= end_i - start_j).OnlyEnforceIf(var)
+
+    return continuous_manual
+
+
 def _error_response(
     request: dict[str, Any], code: str, message: str, elapsed_ms: int, *, status: str = "INFEASIBLE"
 ) -> dict[str, Any]:
@@ -95,7 +185,9 @@ def schedule(
     devices = request["device_config"]["devices"]
     objective = request.get("objective") or {}
     max_solve_time_sec = float(objective.get("max_solve_time_sec") or config.max_solve_time_sec)
-    manual_merge_gap_sec = int(objective.get("manual_merge_gap_sec") or 30)
+    manual_merge_gap_sec = (
+        int(objective["manual_merge_gap_sec"]) if objective.get("manual_merge_gap_sec") is not None else 30
+    )
     horizon = sum(task["duration_sec"] for task in tasks)
     model = cp_model.CpModel()
     starts: dict[str, cp_model.IntVar] = {}
@@ -104,8 +196,7 @@ def schedule(
     device_choices: dict[str, list[tuple[dict[str, Any], cp_model.BoolVar]]] = {}
     device_intervals: dict[str, list[tuple[cp_model.IntervalVar, int]]] = {}
     operator_intervals: list[tuple[cp_model.IntervalVar, int]] = []
-    manual_segment_starts: list[cp_model.IntVar] = []
-    manual_segment_ends: list[cp_model.IntVar] = []
+    manual_segments: list[tuple[cp_model.IntVar, int, cp_model.IntVar]] = []
 
     for task in tasks:
         task_id = task["task_id"]
@@ -158,8 +249,7 @@ def schedule(
                 manual_start, segment["duration_sec"], manual_end, f"manual_{task_id}_{index}"
             )
             operator_intervals.append((manual_interval, 1))
-            manual_segment_starts.append(manual_start)
-            manual_segment_ends.append(manual_end)
+            manual_segments.append((manual_start, segment["duration_sec"], manual_end))
 
     for device_id, resource_intervals in device_intervals.items():
         device = next(item for item in devices if item["device_id"] == device_id)
@@ -193,15 +283,14 @@ def schedule(
     makespan = model.NewIntVar(0, horizon, "makespan")
     model.AddMaxEquality(makespan, list(ends.values()))
 
-    # Operator busy span (max manual end - min manual start) as the tractable
-    # proxy for continuous manual operation.
-    max_manual_span = model.NewIntVar(0, horizon, "max_manual_span")
-    if manual_segment_starts:
-        manual_max_end = model.NewIntVar(0, horizon, "manual_max_end")
-        manual_min_start = model.NewIntVar(0, horizon, "manual_min_start")
-        model.AddMaxEquality(manual_max_end, manual_segment_ends)
-        model.AddMinEquality(manual_min_start, manual_segment_starts)
-        model.Add(max_manual_span == manual_max_end - manual_min_start)
+    # Continuous manual operation (the V1 max-continuous-manual metric). Two
+    # manual segments whose gap is at most `manual_merge_gap_sec` merge into one
+    # block, and the objective is the longest block's span. This is modelled
+    # exactly (see `_add_continuous_manual_objective`) so the third solve stage
+    # optimises the same quantity the response reports.
+    continuous_manual = _add_continuous_manual_objective(
+        model, manual_segments, manual_merge_gap_sec, horizon
+    )
 
     deadline = perf_counter() + max_solve_time_sec
 
@@ -243,15 +332,18 @@ def schedule(
         final_solver = solver
         all_optimal = all_optimal and status == cp_model.OPTIMAL
 
-        # Stage 3: minimise operator busy span subject to the pinned spread and makespan.
-        model.ClearObjective()
-        model.Minimize(max_manual_span)
-        solver, status = solve_stage()
-        if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
-            final_solver = solver
-            all_optimal = all_optimal and status == cp_model.OPTIMAL
-        else:
-            all_optimal = False
+        # Stage 3: minimise continuous manual operation subject to the pinned
+        # spread and makespan. When there are no manual segments the metric is
+        # already 0, so there is nothing left to optimise.
+        if continuous_manual is not None:
+            model.ClearObjective()
+            model.Minimize(continuous_manual)
+            solver, status = solve_stage()
+            if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
+                final_solver = solver
+                all_optimal = all_optimal and status == cp_model.OPTIMAL
+            else:
+                all_optimal = False
     else:
         all_optimal = False
 
