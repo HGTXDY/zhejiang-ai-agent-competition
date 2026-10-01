@@ -57,6 +57,11 @@ export class HttpCookFlowApi implements CookFlowApi {
     return toResult(await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) }))
   }
   async postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule): Promise<ReplanResult> {
+    if (status === 'RUNNING') {
+      const notification: Notification = { notification_id: `evt-${Date.now()}`, level: 'info', type: 'schedule_updated', trigger_offset_sec: task.start_offset_sec, dish_id: task.dish_id, task_id: task.task_id, action: `${task.action} · 已开始执行`, parameters: { status }, message: '任务已进入执行中状态', created_at: new Date().toISOString() }
+      const updatedTask = { ...task, status: 'RUNNING' as const }
+      return { schedule: { ...current, tasks: current.tasks.map(item => item.task_id === task.task_id ? updatedTask : item) }, changes: [{ task_id: task.task_id, action: task.action, type: 'UNCHANGED', detail: '任务开始执行' }], notifications: [notification], disruptionScore: 0 }
+    }
     const eventType: ReplanEventType = status === 'COMPLETED' ? 'TASK_COMPLETED' : status === 'DELAYED' ? 'TASK_DELAYED' : 'DEVICE_UNAVAILABLE'
     const payload = eventType === 'TASK_DELAYED' ? { task_id: task.task_id, delay_sec: 60 } : eventType === 'DEVICE_UNAVAILABLE' ? { device_id: task.assigned_resources.find(resource => resource !== 'operator_1') ?? task.assigned_resources[0] } : { task_id: task.task_id }
     return this.replan({ schema_version: '1.0', event_id: `evt_${Date.now()}`, schedule_id: current.schedule_id, event_type: eventType, occurred_at: new Date().toISOString(), payload }, current)
