@@ -1,0 +1,31 @@
+name: Performance baseline
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/scheduler/**"
+      - "backend/app/parser/**"
+      - "backend/app/replan.py"
+      - "scripts/benchmark_performance.py"
+      - "docs/evaluation/**"
+      - ".github/workflows/performance.yml"
+
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scheduler and parser dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Run three-baseline benchmark with budget gate
+        env:
+          PYTHONPATH: backend:.
+        run: >-
+          python scripts/benchmark_performance.py
+          --initial-iterations 5 --initial-warmup 1
+          --replan-iterations 5 --replan-warmup 1
+          --e2e-iterations 1 --e2e-warmup 1
+          --fail-on-budget
