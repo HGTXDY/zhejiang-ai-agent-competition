@@ -27,8 +27,8 @@
             "additionalProperties": false,
             "properties": {
               "modes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-              "temperature_min_c": {"type": ["integer", "null"], "minimum": 0, "maximum": 500},
-              "temperature_max_c": {"type": ["integer", "null"], "minimum": 0, "maximum": 500}
+              "temperature_min_c": {"type": ["integer", "null"], "minimum": -50, "maximum": 500},
+              "temperature_max_c": {"type": ["integer", "null"], "minimum": -50, "maximum": 500}
             }
           },
           "available": {"type": "boolean", "default": true}

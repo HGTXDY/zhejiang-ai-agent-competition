@@ -42,6 +42,10 @@ ReplanResponse（新排程、变化列表、扰动指标、通知）
 ## 4. 不可变语义
 
 - 官方七类设备映射为：`range_hood`、`stove`、`steamer`、`oven`、`refrigerator`、`dishwasher`、`water_purifier`；
+- 「净咖一体机」归一化为 `water_purifier`，能力包含 `coffee` 与 `instant_heat` 两类模式，不因枚举名裁剪咖啡模式；
+- 「蒸烤箱 / 蒸烤一体机 / 方太智能烹饪设备」按步骤明确模式拆分为 `steamer`（蒸制模式）或 `oven`（烤制模式），无明确模式但有「水箱/加满水」补水信号时按 `steamer` 推断，否则不猜测设备类型；
+- 灶具火力档位（1~7 整数档）不在 V1 建模，火力意图由 `stove` 的烹饪方式模式表达；
+- 设备能力温度下界放宽至 -50，以覆盖冰箱冷冻温区 -24~-15℃；详见 `data/official/MAPPING_NOTES.md`；
 - 多灶眼等具体资源用多个 `device_id` 表示，例如 `stove_burner_1`；
 - Parser 输出 `device_requirement` 和人工字段；可选 `device_unit` 仅作为识别提示，最终具体设备由调度器在 `assigned_resources` 中分配并校验；
 - 调度器在 `assigned_resources` 中分配具体设备和人工资源；

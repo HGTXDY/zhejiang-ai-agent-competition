@@ -72,7 +72,7 @@
             "integer",
             "null"
           ],
-          "minimum": 0,
+          "minimum": -50,
           "maximum": 500
         },
         "capacity_units": {
