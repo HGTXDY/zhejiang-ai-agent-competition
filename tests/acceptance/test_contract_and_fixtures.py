@@ -121,7 +121,11 @@ def _independent_hard_constraint_errors(request: dict, result: dict) -> list[str
         if item["end_offset_sec"] - item["start_offset_sec"] != definition["duration_sec"]:
             errors.append(f"duration mismatch: {task_id}")
         for predecessor in definition["predecessors"]:
-            if scheduled[predecessor]["end_offset_sec"] > item["start_offset_sec"]:
+            predecessor_item = scheduled.get(predecessor)
+            if predecessor_item is None:
+                errors.append(f"missing predecessor task: {task_id} -> {predecessor}")
+                continue
+            if predecessor_item["end_offset_sec"] > item["start_offset_sec"]:
                 errors.append(f"dependency violation: {task_id}")
 
     for device_id, device in devices.items():
@@ -230,3 +234,14 @@ def test_acceptance_rejects_task_assigned_to_incompatible_device():
 
     errors = _independent_hard_constraint_errors(request, result)
     assert "assigned device incompatible: fish_steam -> oven_1" in errors
+
+
+def test_independent_checker_reports_missing_predecessor_without_key_error():
+    request = _load(FIXTURE_DIR / "four-dish-normal.json")
+    from app.scheduler import schedule
+
+    result = schedule(request)
+    result["tasks"] = [task for task in result["tasks"] if task["task_id"] != "fish_prepare"]
+    errors = _independent_hard_constraint_errors(request, result)
+    assert any(error == "missing task: fish_prepare" for error in errors)
+    assert any(error.startswith("missing predecessor task: fish_steam") for error in errors)
