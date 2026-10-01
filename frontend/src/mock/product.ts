@@ -1,6 +1,6 @@
 import { initialSchedule } from './schedule'
 import { recipeCatalog } from './recipes'
-import type { DashboardSchedule, DashboardTask } from '../types/contracts'
+import type { DashboardSchedule, DashboardTask, TimelineResource } from '../types/contracts'
 import type { KitchenConfig, ProductScheduleRequest, ProductScheduleResult, RecipeValidation } from '../types/product'
 
 const wait = () => new Promise(resolve => setTimeout(resolve, 450))
@@ -22,17 +22,19 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
   const validation = await validateProductRequest(request)
   if (!validation.valid) return { schedule: initialSchedule, validation }
   const selected = request.recipe_ids.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)!).filter(Boolean)
-  const resources = [
-    ...Array.from({ length: request.kitchen.stove_count }, (_, index) => `stove_${index + 1}`),
-    ...Array.from({ length: request.kitchen.steamer_count }, (_, index) => `steamer_${index + 1}`),
-    ...Array.from({ length: request.kitchen.oven_count }, (_, index) => `oven_${index + 1}`),
+  const resources: TimelineResource[] = [
+    ...Array.from({ length: request.kitchen.operator_count }, (_, index) => ({ id: `operator_${index + 1}`, label: `操作员 · ${String(index + 1).padStart(2, '0')}`, tone: 'gold' as const })),
+    ...Array.from({ length: request.kitchen.stove_count }, (_, index) => ({ id: `stove_${index + 1}`, label: `灶具 · ${String(index + 1).padStart(2, '0')}`, tone: 'cyan' as const })),
+    ...Array.from({ length: request.kitchen.steamer_count }, (_, index) => ({ id: `steamer_${index + 1}`, label: `蒸箱 · ${String(index + 1).padStart(2, '0')}`, tone: 'violet' as const })),
+    ...Array.from({ length: request.kitchen.oven_count }, (_, index) => ({ id: `oven_${index + 1}`, label: `烤箱 · ${String(index + 1).padStart(2, '0')}`, tone: 'slate' as const })),
   ]
+  const cookingResources = resources.filter(resource => !resource.id.startsWith('operator_'))
   const tasks: DashboardTask[] = selected.flatMap((recipe, index) => {
     const base = index * 480
-    const resource = resources[index % resources.length]
+    const resource = cookingResources[index % cookingResources.length]
     return [
       { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, action: `${recipe.name}备料`, start_offset_sec: base, end_offset_sec: base + 150, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource.id], status: 'PENDING', locked: false, notification_points: [] },
     ]
   })
   const schedule: DashboardSchedule = {
@@ -42,6 +44,7 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
     solver: { ...initialSchedule.solver, duration_ms: 38, objective_value: tasks.length * 480 },
     metrics: { ...initialSchedule.metrics, makespan_sec: tasks.length ? Math.max(...tasks.map(task => task.end_offset_sec)) : 0, target_delay_sec: 0 },
     tasks,
+    resources,
     validation: { valid: true, errors: [] },
   }
   return { schedule, validation }
