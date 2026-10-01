@@ -35,6 +35,25 @@ const toDiffs = (response: ReplanResponse): ReplanResult['changes'] => response.
 const formatOffset = (offset: number | null | undefined) => offset == null ? '—' : `${Math.floor(offset / 60)}:${String(offset % 60).padStart(2, '0')}`
 const toResult = (response: ReplanResponse): ReplanResult => ({ schedule: apiSchedule(response.schedule), changes: toDiffs(response), notifications: response.schedule.notifications, disruptionScore: response.disruption_score })
 
+/** Build the V1 replan envelope, stripping UI-only fields from the schedule.
+ *
+ * `DashboardSchedule` adds a top-level `resources` field (and each task adds an
+ * `action` label) that are not part of `schedule-response.schema.json`, whose
+ * top level is `additionalProperties: false`. The replan request must therefore
+ * send only the standard V1 `ScheduleResponse` fields or the schema rejects it.
+ */
+export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRequest, current: DashboardSchedule): Record<string, unknown> => {
+  const { resources: _resources, ...standardSchedule } = current
+  return {
+    event,
+    schedule_request: scheduleRequest,
+    current_schedule: {
+      ...standardSchedule,
+      tasks: current.tasks.map(({ action: _action, ...task }) => task),
+    },
+  }
+}
+
 export class HttpCookFlowApi implements CookFlowApi {
   private scheduleRequest: ScheduleRequest | null = null
   constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
@@ -52,7 +71,7 @@ export class HttpCookFlowApi implements CookFlowApi {
   }
   private async replan(event: ReplanEvent, current: DashboardSchedule, addedTasks?: Record<string, unknown>[]): Promise<ReplanResult> {
     if (!this.scheduleRequest) await this.getSchedule()
-    const envelope = { event, schedule_request: this.scheduleRequest, current_schedule: { ...current, tasks: current.tasks.map(({ action: _action, ...task }) => task) } }
+    const envelope = toReplanEnvelope(event, this.scheduleRequest!, current)
     if (addedTasks) event.payload = { ...event.payload, tasks: addedTasks }
     return toResult(await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) }))
   }

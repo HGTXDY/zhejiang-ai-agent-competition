@@ -189,3 +189,25 @@ def test_replan_preserves_completed_task_assignment_and_times():
     assert response.status_code == 200
     updated = next(task for task in response.json()["schedule"]["tasks"] if task["task_id"] == completed["task_id"])
     assert {key: updated.get(key) for key in snapshot} == snapshot
+
+
+def test_replan_rejects_ui_only_resources_field_in_current_schedule():
+    """The V1 contract rejects UI-only fields if they leak into the replan request.
+
+    The dashboard adds a top-level `resources` field that `schedule-response.schema.json`
+    does not allow (`additionalProperties: false`). The frontend strips it before
+    posting; this test pins the contract boundary so such a field can never silently
+    enter a replan request again.
+    """
+    request, previous = current_schedule()
+    previous["resources"] = [{"id": "stove_1", "label": "灶具", "tone": "gold"}]
+    body = {
+        "event": event("event-resources-1", previous["schedule_id"], "TASK_COMPLETED", {"task_id": previous["tasks"][0]["task_id"]}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_INPUT"
+    messages = " ".join(detail["message"] for detail in response.json()["error"]["details"])
+    assert "resources" in messages
