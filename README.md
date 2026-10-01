@@ -1,61 +1,115 @@
-# 浙江省大学生人工智能竞赛 Agent 项目
+# 灶序（CookFlow）智能烹饪调度 Agent
 
-本仓库用于浙江省大学生人工智能竞赛的双人协作开发。当前阶段先建立工程规范、协作流程和可复用的 Agent 项目骨架；比赛主题确定后，再基于本规范拆解需求与实现方案。
+浙江省大学生人工智能竞赛“方太”人工智能专项赛项目。灶序面向家庭多人、多菜并行烹饪场景，把自然语言菜谱和厨房设备约束转换为可执行、可解释、可动态重排的烹饪计划。
 
-## 当前状态
+> 当前产品主题、PRD 和赛题范围已经冻结，不再是通用 Agent 脚手架项目。
 
-- 项目阶段：预研与工程准备
-- 参赛主题：待确定
-- 协作方式：Issue → 分支 → Pull Request → Code Review → 合并
-- 仓库权限：Private
+## 产品目标
 
-## 目录结构
+用户选择菜谱并配置厨房设备后，系统完成：
+
+1. 菜谱步骤结构化与字段状态标注；
+2. Schema 与业务规则校验；
+3. 基于 OR-Tools CP-SAT 的确定性设备/人工调度；
+4. 输出任务队列、资源轨道、指标和可解释的排程结果；
+5. 在延迟、设备不可用、临时加菜等事件发生时，保持已完成/锁定任务并进行最小扰动重排。
+
+大模型只负责语义解析和结构化抽取，不能绕过契约、规则校验和调度器直接决定正式排程。
+
+## 当前基线
+
+- 产品：灶序智能烹饪调度 Agent
+- 赛题：ZX-2026-0302 智能烹饪调度 Agent
+- PRD：V1.0，已评审冻结（2026-09-24）
+- 当前里程碑：M1 确定性调度 MVP，向 M2/M3/M4 迭代
+- 协作：HGTXDY 与 cbiiro97977 对等开发、交叉 Review；HGTXDY 负责维护任务池和推进顺序
+
+## 仓库结构
 
 ```text
-.
-├── .github/
-│   ├── CODEOWNERS
-│   ├── merge-policy.md
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md
-│   │   ├── feature_request.md
-│   │   └── research_task.md
-│   ├── pull_request_template.md
-│   └── workflows/                 # CI 工作流（主题确定后补充）
-├── docs/
-│   ├── meeting-notes/             # 会议记录
-│   └── decisions/                 # 技术决策记录（ADR）
-├── src/                           # 业务代码
-├── tests/                         # 自动化测试
-├── .env.example                   # 环境变量示例，禁止放真实密钥
-├── CODE_OF_CONDUCT.md
-├── SECURITY.md
-├── ARCHITECTURE.md                # 系统架构与 Agent 设计
-├── CONTRIBUTING.md                # 协作开发规范
-├── DEVELOPMENT.md                 # 日常开发流程
-├── REQUIREMENTS.md                # 需求池与验收标准
-└── README.md
+contracts/v1/       版本化 JSON Schema、样例和业务规则
+fixtures/v1/        确定性调度与负向验收 fixture
+backend/app/
+  parser/           菜谱结构化解析适配器
+  validation/       请求/结果校验与设备能力判断
+  scheduler/        OR-Tools CP-SAT 调度器
+  execution/        执行状态机、事件和重排差异
+  metrics/          多目标指标
+  api.py            FastAPI API 入口
+backend/tests/      后端、调度、API、状态机和指标测试
+frontend/            React + TypeScript 产品原型与排程可视化
+data/               标注模板、评测数据和数据说明
+docs/product/       PRD 基线
+docs/competition/   官方赛题材料说明
+docs/project/       backlog、路线、分工和决策权
+docs/technical/     架构、契约和算法文档
+delivery/           交付检查与现场演示清单
+scripts/             契约校验、评测、演示和交付脚本
 ```
-
-
-## 当前正式文档
-
-- [PRD 基线](docs/product/PRD_BASELINE.md)
-- [技术架构](docs/technical/TECHNICAL_ARCHITECTURE.md)
-- [数据与 API 契约](docs/technical/DATA_AND_API_CONTRACT.md)
-- [模块分工](docs/project/MODULE_OWNERSHIP.md)
-- [决策权与变更流程](docs/project/DECISION_RIGHTS.md)
-- [开发路线](docs/project/ROADMAP.md)
 
 ## 快速开始
 
-主题和技术栈确定后，在本文件补充：运行环境、依赖安装、启动命令、测试命令和部署方式。所有本地密钥只放在未提交的 `.env` 中，并以 `.env.example` 说明变量名称和用途。
+### 后端
 
-## 重要约定
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+PYTHONPATH=backend:. python -m pytest -q
+PYTHONPATH=backend:. uvicorn app.main:app --app-dir backend --reload
+```
 
-1. 不直接向 `main` 分支推送代码。
-2. 每项工作先创建 Issue，再创建对应分支。
-3. 所有合并必须经过 Pull Request 和至少一次 Code Review。
-4. Prompt、工具调用、模型参数和评测数据都需要版本化记录。
-6. 严格遵守 `.github/merge-policy.md`；任何代码上传都必须走工作分支和 Pull Request。
-5. 不提交 API Key、个人隐私数据、比赛未公开材料或大体积生成文件。
+API 文档启动后位于 `/docs`；健康检查位于 `/health`。固定请求样例见 `fixtures/v1/four-dish-normal.json`。
+
+### 前端
+
+```bash
+cd frontend
+npm ci
+npm run build
+npm run dev
+```
+
+前端当前提供产品主流程和排程可视化；接口适配支持 Mock 与 HTTP 模式，具体配置见 `frontend/README.md`。
+
+### 交付检查
+
+在仓库根目录执行：
+
+```bash
+./scripts/check-delivery.sh
+```
+
+该脚本会执行契约校验、后端测试、前端构建和交付文档检查。演示启动：
+
+```bash
+./scripts/run-demo.sh
+```
+
+## CI 与合并门禁
+
+每个 Pull Request 至少经过以下自动检查：
+
+- `quality-gate`：完整后端测试、契约校验、前端构建；
+- `api`：FastAPI API 测试；
+- `scheduler`：调度器及后端回归测试；
+- `parser`：解析适配器测试；
+- `execution`：执行状态机测试；
+- `metrics`：多目标指标测试；
+- `annotation`：标注流水线测试；
+- `frontend`：TypeScript 检查与 Vite 构建；
+- `repository-policy`：敏感文件和高风险凭据扫描。
+
+任何代码、Prompt、配置、契约或文档变更都必须通过工作分支 → PR → 双人交叉 Review → CI → 合并，禁止直接向 `main` 推送。详细规则见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [.github/merge-policy.md](.github/merge-policy.md)。
+
+## 核心文档
+
+- [PRD 基线](docs/product/PRD_BASELINE.md)
+- [官方赛题说明](docs/competition/README.md)
+- [技术架构](docs/technical/TECHNICAL_ARCHITECTURE.md)
+- [数据与 API 契约](docs/technical/DATA_AND_API_CONTRACT.md)
+- [开发路线](docs/project/ROADMAP.md)
+- [Issue Backlog](docs/project/ISSUE_BACKLOG.md)
+- [模块分工](docs/project/MODULE_OWNERSHIP.md)
+- [开发流程](DEVELOPMENT.md)
+- [交付演示清单](delivery/demo-checklist.md)

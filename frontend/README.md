@@ -1,6 +1,6 @@
 # 灶序 CookFlow 前端演示控制台
 
-这是 CookFlow 的第一阶段可运行产品原型，目标是在后端 API 完成前提供可演示、可 Review 的排程控制台。
+这是 CookFlow 的可运行 React/TypeScript 产品控制台。当前初始排程已经可以通过 HTTP API 适配器联调；事件上报、动态重排仍保留 Mock 降级路径。
 
 ## 本地运行
 
@@ -22,7 +22,7 @@ npm run dev
 - 临时加菜 Mock 流程；
 - 事件通知面板；
 - 重排差异展示（当前以 Mock 结果演示）；
-- `src/mock/api.ts` 作为真实 API 的替换边界。
+- `src/api/client.ts` 是 API 边界：通过 `VITE_API_MODE=http` 使用后端初始排程接口，默认 `mock` 用于离线演示。
 
 ## 校验
 
@@ -34,4 +34,10 @@ npm run build
 
 ## API 接入原则
 
-后续接入后端时，保留 `src/types/contracts.ts` 的字段命名，替换 Mock 数据层，不在组件中重新定义 V1 契约。真实 API 需要接入 `schedule-response`、`event-request` 和 `replan-response`。当前按钮交互仍是前端 Mock，不代表真实后端闭环。
+保留 `src/types/contracts.ts` 的字段命名，组件不得重新定义 V1 契约。启动 HTTP 模式：
+
+```bash
+VITE_API_MODE=http VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+当前后端已提供 `schedule-request` → `schedule-response` 初始排程闭环；事件上报和 `replan-response` 尚未由 API 暴露，因此这些操作在 HTTP 模式下仍明确走 Mock，不代表动态重排后端已完成。
