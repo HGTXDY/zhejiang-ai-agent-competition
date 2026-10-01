@@ -108,3 +108,14 @@ def test_delay_requires_positive_integer_and_running_task():
     result = machine.apply(event("e2", "TASK_DELAYED", {"task_id": "prep", "delay_sec": 30}))
     assert result.notifications[0]["delay_sec"] == 30
     assert machine.schedule["tasks"][0]["status"] == "DELAYED"
+
+
+def test_running_task_records_resource_and_start_changes_independently():
+    from app.execution import compare_schedules
+
+    previous = [{"task_id": "running", "dish_id": "d", "status": "RUNNING", "locked": False, "start_offset_sec": 100, "assigned_resources": ["stove_1"]}]
+    current = [{"task_id": "running", "dish_id": "d", "status": "RUNNING", "locked": False, "start_offset_sec": 130, "assigned_resources": ["stove_2"]}]
+    changes, metrics = compare_schedules(previous, current)
+    assert changes[0]["change_type"] == "RESOURCE_CHANGED"
+    assert metrics["resource_change_count"] == 1
+    assert metrics["start_offset_total_sec"] == 30

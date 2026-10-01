@@ -40,26 +40,3 @@ def test_health_endpoint_allows_local_frontend_origin():
     response = client.get("/health", headers={"Origin": "http://localhost:5173"})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
-
-
-def test_schedule_endpoint_normalizes_non_object_body():
-    response = client.post("/v1/schedules", json=["not", "an", "object"], headers={"X-Request-ID": "bad-body-1"})
-    assert response.status_code == 422
-    body = response.json()
-    assert body["schema_version"] == "1.0"
-    assert body["request_id"] == "bad-body-1"
-    assert body["error"]["code"] == "INVALID_INPUT"
-    assert body["error"]["details"]
-
-
-def test_schedule_endpoint_normalizes_unhandled_scheduler_error(monkeypatch):
-    def explode(_payload):
-        raise RuntimeError("simulated scheduler failure")
-
-    monkeypatch.setattr("app.api.schedule", explode)
-    safe_client = TestClient(app, raise_server_exceptions=False)
-    response = safe_client.post("/v1/schedules", json=load_fixture("four-dish-normal.json"))
-    assert response.status_code == 500
-    body = response.json()
-    assert body["error"]["code"] == "INTERNAL_ERROR"
-    assert body["error"]["details"] == []

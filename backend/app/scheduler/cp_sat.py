@@ -69,11 +69,19 @@ def _error_response(
     }
 
 
-def schedule(request: dict[str, Any], config: SchedulerConfig | None = None) -> dict[str, Any]:
+def schedule(
+    request: dict[str, Any],
+    config: SchedulerConfig | None = None,
+    *,
+    locked_tasks: dict[str, dict[str, Any]] | None = None,
+    start_floors: dict[str, int] | None = None,
+) -> dict[str, Any]:
     """Create a V1-shaped schedule from a validated schedule request."""
     config = config or SchedulerConfig()
     started = perf_counter()
     tasks = request["tasks"]
+    locked_tasks = locked_tasks or {}
+    start_floors = start_floors or {}
     devices = request["device_config"]["devices"]
     horizon = sum(task["duration_sec"] for task in tasks)
     model = cp_model.CpModel()
@@ -90,6 +98,11 @@ def schedule(request: dict[str, Any], config: SchedulerConfig | None = None) -> 
         starts[task_id] = model.NewIntVar(0, horizon, f"start_{task_id}")
         ends[task_id] = model.NewIntVar(0, horizon, f"end_{task_id}")
         intervals[task_id] = model.NewIntervalVar(starts[task_id], duration, ends[task_id], f"interval_{task_id}")
+        if task_id in start_floors:
+            model.Add(starts[task_id] >= start_floors[task_id])
+        locked = locked_tasks.get(task_id)
+        if locked is not None:
+            model.Add(starts[task_id] == locked["start_offset_sec"])
         for predecessor in task["predecessors"]:
             model.Add(starts[task_id] >= ends[predecessor])
 
@@ -108,6 +121,14 @@ def schedule(request: dict[str, Any], config: SchedulerConfig | None = None) -> 
                 device_intervals.setdefault(device["device_id"], []).append((optional, requirement["capacity_units"]))
                 choices.append((device, selected))
             model.AddExactlyOne(selected for _, selected in choices)
+            if task_id in locked_tasks:
+                assigned = set(locked_tasks[task_id].get("assigned_resources", []))
+                matching = [device for device, _ in choices if device["device_id"] in assigned]
+                if len(matching) != 1:
+                    elapsed_ms = int((perf_counter() - started) * 1000)
+                    return _error_response(request, "LOCKED_RESOURCE_INVALID", f"Locked task {task_id} has no compatible assigned device", elapsed_ms)
+                for device, selected in choices:
+                    model.Add(selected == (device["device_id"] == matching[0]["device_id"]))
             device_choices[task_id] = choices
 
         segments = task.get("manual_segments", [])
