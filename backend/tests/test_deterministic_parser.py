@@ -1,8 +1,14 @@
+import json
+from pathlib import Path
+
 import pytest
+from jsonschema import Draft202012Validator
 
 from app.parser import DeterministicParserAdapter, RecipeParser, default_device_config
 from app.parser.adapter import ParsedTaskError
 from app.scheduler import schedule
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _recipe(recipe_id: str, steps: list[str]) -> dict:
@@ -80,3 +86,10 @@ def test_parsed_recipe_schedules_against_default_device_config():
     response = schedule(request)
     assert response["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
     assert response["validation"]["valid"] is True
+
+
+def test_default_device_config_satisfies_v1_device_schema():
+    schema = json.loads((ROOT / "contracts" / "v1" / "schemas" / "device.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    config = default_device_config()
+    assert list(validator.iter_errors(config)) == []

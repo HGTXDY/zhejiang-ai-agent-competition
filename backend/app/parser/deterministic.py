@@ -215,7 +215,10 @@ def default_device_config(operator_count: int = 1) -> dict[str, Any]:
         {"device_id": "oven_1", "device_type": "oven", "capacity_units": 2,
          "temperature_min_c": 30, "temperature_max_c": 250},
         {"device_id": "refrigerator_1", "device_type": "refrigerator", "capacity_units": 3,
-         "temperature_min_c": -24, "temperature_max_c": 10},
+         # V1 device schema clamps temperature_min_c to >= 0, and the parser only
+         # emits 冷藏/解冻 tasks (default 4°C); the freezer's sub-zero range is
+         # deferred to device-enum alignment (#48).
+         "temperature_min_c": 0, "temperature_max_c": 10},
         {"device_id": "dishwasher_1", "device_type": "dishwasher", "capacity_units": 1,
          "temperature_min_c": None, "temperature_max_c": None},
         {"device_id": "range_hood_1", "device_type": "range_hood", "capacity_units": 1,

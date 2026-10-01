@@ -4,6 +4,7 @@
   "parsed_ok": 100,
   "parse_failed": 0,
   "failed": [],
+  "schema_invalid": 0,
   "schedule_status": {
     "OPTIMAL": 100
   },
