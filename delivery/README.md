@@ -50,4 +50,19 @@
 - 本目录不是官方 Gold Label 数据集；
 - `fixtures/v1` 仅用于契约、冒烟和联调；
 - 前端支持 Mock 与 HTTP 两种适配模式；演示必须明确当前模式，动态事件/重排在对应 API 合并前仍使用 Mock。
-- Docker 镜像与完整性能基线仍是 M5 的未完成项。
+- 动态事件/重排 API 合并前，不声明已完成真实 API 闭环。
+- 完整性能基线仍是 M5 的未完成项。
+
+## Docker/Compose 全栈运行
+
+需要 Docker Desktop 或兼容 Docker Compose v2 的环境：
+
+```bash
+docker compose up --build
+```
+
+- API：`http://127.0.0.1:8000/health`
+- 前端：`http://127.0.0.1:8080`
+- 自动冒烟：`./scripts/compose-smoke.sh`
+
+当前 Compose 验证初始排程 API 和前端 HTTP 适配；动态事件/重排 API 合并后再扩展对应验收场景。
