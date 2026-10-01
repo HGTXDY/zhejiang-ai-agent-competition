@@ -147,7 +147,7 @@ def _device_capability_error(task: Any, devices: Iterable[Any]) -> tuple[str, st
             f"all devices of type {requirement.device_type} are unavailable for task {task.task_id}",
         )
     mode_compatible = [
-        device for device in typed
+        device for device in available
         if requirement.mode is None or requirement.mode in device.capabilities.modes
     ]
     if not mode_compatible:

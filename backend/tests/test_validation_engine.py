@@ -144,3 +144,14 @@ def test_request_validation_distinguishes_missing_device_type_from_unavailable_t
     result = validate_schedule_request(request)
     assert result.errors[0].code == "DEVICE_TYPE_UNAVAILABLE"
     assert "all devices" in result.errors[0].message
+
+
+def test_request_validation_ignores_unavailable_device_capabilities():
+    request = load_fixture("four-dish-normal.json")
+    steamer = request["device_config"]["devices"][2]
+    steamer["available"] = False
+    steamer["capabilities"]["modes"] = ["high_pressure_steam"]
+    request["tasks"][4]["device_requirement"]["mode"] = "high_pressure_steam"
+    result = validate_schedule_request(request)
+    assert not result.valid
+    assert any(error.code == "DEVICE_TYPE_UNAVAILABLE" for error in result.errors)
