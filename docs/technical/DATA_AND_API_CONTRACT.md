@@ -58,16 +58,21 @@ ReplanResponse（新排程、变化列表、扰动指标、通知）
 
 | 方法 | 路径 | 请求 | 响应 |
 |---|---|---|---|
-| `GET` | `/api/v1/recipes` | — | Recipe 列表 |
-| `POST` | `/api/v1/recipes/parse` | Recipe | Task[] + 解析质量信息 |
-| `POST` | `/api/v1/devices/validate` | DeviceConfiguration + Task[] | 校验结果 |
-| `POST` | `/api/v1/schedules` | ScheduleRequest | ScheduleResponse |
-| `GET` | `/api/v1/schedules/{id}` | — | ScheduleResponse |
-| `POST` | `/api/v1/schedules/{id}/events` | ExecutionEvent | 事件接收结果 |
-| `POST` | `/api/v1/schedules/{id}/replan` | ExecutionEvent 或已接收事件 ID | ReplanResponse |
-| `GET` | `/api/v1/schedules/{id}/notifications` | — | Notification[] |
+| `GET` | `/recipes` | — | Recipe 摘要数组（`limit`、`q` 可选） |
+| `GET` | `/recipes/{recipe_id}` | — | 可提交解析的 Recipe |
+| `POST` | `/recipes/parse` | Recipe | Task[] + 解析质量信息 |
+| `POST` | `/devices/validate` | DeviceConfiguration | 校验结果 + 能力报告 |
+| `POST` | `/schedules` | ScheduleRequest | ScheduleResponse |
+| `GET` | `/schedules/{id}` | — | ScheduleResponse |
+| `POST` | `/schedules/{id}/events` | ExecutionEvent | 事件接收结果 |
+| `POST` | `/schedules/{id}/replan` | ExecutionEvent（或含 schedule_request） | ReplanResponse |
+| `GET` | `/schedules/{id}/notifications` | — | Notification[] |
 
-FastAPI/OpenAPI 模型在后端脚手架合并后由 Schema 对应实现，不得更改字段语义。
+路径口径对齐 PRD Table 19（Issue #49）。版本化别名 `/v1/schedules`、`/v1/replans` 保留，
+其中 `/v1/replans` 仍是无状态信封式；`/schedules` 系列由进程内内存存储支撑。详见
+[`API_ENDPOINTS.md`](API_ENDPOINTS.md)。
+
+FastAPI/OpenAPI 模型由上述端点自动生成，不得更改字段语义。
 
 ## 6. 错误模型
 
