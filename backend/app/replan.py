@@ -131,7 +131,8 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     candidate["schedule_id"] = f"{previous['schedule_id']}:replan:{event['event_id']}"
     changes, metrics = compare_schedules(previous.get("tasks", []), candidate["tasks"], notified_task_ids=set(result.affected_task_ids))
     notifications = build_notifications(changes, created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
-    candidate["notifications"] = notifications
+    # Keep the new schedule's key-node notifications and append the replan diff.
+    candidate["notifications"] = (candidate.get("notifications") or []) + notifications
     return {
         "schema_version": "1.0",
         "event_id": event["event_id"],

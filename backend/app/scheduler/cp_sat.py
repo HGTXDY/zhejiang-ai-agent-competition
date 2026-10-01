@@ -14,12 +14,14 @@ tractable proxy for continuous manual load.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
 from ortools.sat.python import cp_model
 
 from app.metrics import finish_spread_sec, max_continuous_manual_sec
+from app.notifications import build_key_node_plan
 
 
 @dataclass(frozen=True)
@@ -285,6 +287,16 @@ def schedule(
     )
     objective_value = final_solver.Value(makespan)
     gap = max(0.0, objective_value - makespan_bound) if makespan_bound is not None else None
+
+    notification_started = perf_counter()
+    notifications, points_by_task = build_key_node_plan(scheduled_tasks, tasks)
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    for notification in notifications:
+        notification["created_at"] = created_at
+    for scheduled_task in scheduled_tasks:
+        scheduled_task["notification_points"] = points_by_task.get(scheduled_task["task_id"], [])
+    notification_ms = int((perf_counter() - notification_started) * 1000)
+
     return {
         "schema_version": "1.0",
         "request_id": request["request_id"],
@@ -306,6 +318,6 @@ def schedule(
         },
         "tasks": scheduled_tasks,
         "validation": {"valid": True, "errors": []},
-        "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": 0, "total": elapsed_ms},
-        "notifications": [],
+        "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": notification_ms, "total": elapsed_ms + notification_ms},
+        "notifications": notifications,
     }
