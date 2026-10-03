@@ -73,5 +73,5 @@ def test_parse_recipe_endpoint_rejects_invalid_recipe():
 def test_parse_recipe_endpoint_strict_mode_blocks_unresolved_duration():
     payload = {**RECIPE, "steps_text": ["热锅后放入食材。", "翻炒至熟即可。"]}
     response = client.post("/recipes/parse", json=payload, params={"strict": True})
-    assert response.status_code == 409
+    assert response.status_code == 422
     assert response.json()["error"]["code"] == "PARSE_FAILED"
