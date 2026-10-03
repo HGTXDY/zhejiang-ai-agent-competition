@@ -140,3 +140,22 @@ def test_refrigerator_capability_covers_freezer_range():
     fridge = next(device for device in config["devices"] if device["device_type"] == "refrigerator")
     assert fridge["capabilities"]["temperature_min_c"] == -24
     assert fridge["capabilities"]["temperature_max_c"] == 10
+
+
+def test_freeze_mode_defaults_to_freezer_temperature() -> None:
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(_recipe("freeze_default", ["放入冰箱冷冻，定型后取出。"])).tasks
+    task = next(task for task in tasks if task["resource_type"] in {"device", "hybrid"})
+    requirement = task["device_requirement"]
+    assert requirement["device_type"] == "refrigerator"
+    assert requirement["mode"] == "freeze"
+    assert requirement["temperature_c"] == -18
+    assert task["field_status"]["temperature_c"] == "inferred"
+
+
+def test_chill_mode_keeps_refrigerator_temperature() -> None:
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(_recipe("chill_default", ["放入冰箱冷藏，静置后取出。"])).tasks
+    task = next(task for task in tasks if task["resource_type"] in {"device", "hybrid"})
+    assert task["device_requirement"]["mode"] == "chill"
+    assert task["device_requirement"]["temperature_c"] == 4

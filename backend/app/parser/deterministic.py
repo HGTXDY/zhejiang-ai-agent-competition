@@ -121,8 +121,12 @@ _DEFAULT_TEMPERATURE_C: dict[str, int] = {
     "oven": 180,
     "steamer": 100,
     "stove": 100,
-    "refrigerator": 4,
     "water_purifier": 60,
+}
+_REFRIGERATOR_DEFAULT_TEMPERATURE_C: dict[str, int] = {
+    "freeze": -18,
+    "chill": 4,
+    "thaw": 4,
 }
 
 # Fallback durations when a step carries no explicit time. Device cooking times
@@ -377,9 +381,14 @@ class DeterministicParserAdapter:
             return base
 
         resolved_duration = duration if duration is not None else _DEFAULT_DURATION_SEC[device_type]
+        mode = detect_mode(text, device_type)
         temperature = extract_temperature_c(text)
         if temperature is None:
-            temperature = _DEFAULT_TEMPERATURE_C.get(device_type)
+            temperature = (
+                _REFRIGERATOR_DEFAULT_TEMPERATURE_C.get(mode)
+                if device_type == "refrigerator"
+                else _DEFAULT_TEMPERATURE_C.get(device_type)
+            )
         manual_required = bool(_MANUAL_ACTIONS.search(text))
         segments = _manual_segments(text, resolved_duration) if manual_required else []
         manual_duration = sum(segment["duration_sec"] for segment in segments) if manual_required else 0
@@ -394,7 +403,7 @@ class DeterministicParserAdapter:
             manual_duration_sec=manual_duration,
             device_requirement={
                 "device_type": device_type,
-                "mode": detect_mode(text, device_type),
+                "mode": mode,
                 "temperature_c": temperature,
                 "capacity_units": 1,
             },
