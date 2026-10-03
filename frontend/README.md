@@ -1,6 +1,6 @@
 # 灶序 CookFlow 前端演示控制台
 
-这是 CookFlow 的可运行 React/TypeScript 产品控制台。当前初始排程已经可以通过 HTTP API 适配器联调；事件上报、动态重排仍保留 Mock 降级路径。
+这是 CookFlow 的可运行 React/TypeScript 产品控制台。初始排程、事件上报和动态重排均已支持 HTTP API 适配器；Mock 仍作为默认的离线演示模式。
 
 ## 本地运行
 
@@ -19,9 +19,9 @@ npm run dev
 - 按资源、任务状态筛选；
 - 锁定任务可视化与执行任务详情；
 - 完成任务、上报延迟、设备异常等事件上报；
-- 临时加菜 Mock 流程；
+- 临时加菜与动态重排流程（HTTP 模式走真实 `/v1/replans`，Mock 模式走本地 fixture）；
 - 事件通知面板；
-- 重排差异展示（当前以 Mock 结果演示）；
+- 重排差异、结构化通知和扰动指标展示；
 - `src/api/client.ts` 是 API 边界：通过 `VITE_API_MODE=http` 使用后端初始排程接口，默认 `mock` 用于离线演示。
 
 ## 校验
@@ -40,7 +40,7 @@ npm run build
 VITE_API_MODE=http VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-当前后端已提供 `schedule-request` → `schedule-response` 初始排程闭环；事件上报接入 `POST /v1/replans`（`replan-response`），其余未暴露的能力在 HTTP 模式下仍走 Mock。
+当前后端已提供 `schedule-request` → `schedule-response` 初始排程闭环；事件上报、临时加菜和动态重排接入 `POST /v1/replans`（`replan-response`）。
 
 ## Execution integration
 
@@ -50,7 +50,7 @@ The execution dashboard supports both modes:
 - `VITE_API_MODE=http`: loads `public/demo/schedule-request.json`, calls `POST /v1/schedules`, and sends execution events to `POST /v1/replans`.
 - `VITE_API_BASE_URL` controls the FastAPI origin and defaults to `http://127.0.0.1:8000`.
 
-Run the real API against the dynamic-replan branch or after it is merged:
+Run the real API locally for the HTTP integration demo:
 
 ```bash
 # backend

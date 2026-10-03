@@ -105,9 +105,9 @@ flowchart LR
 
 每个事件包含：`event_id`、`schedule_id`、`event_type`、`task_id`、事件发生时间、实际数据和幂等键。
 
-### 3.6 动态重排（规划中的 API 能力）
+### 3.6 动态重排
 
-当前仓库已有 `execution` 状态迁移与排程差异基础函数，但尚未提供独立 `replanner` 包或完整动态重排 API。后续实现必须基于当前执行快照生成未来计划，不重写历史。
+当前仓库已提供无状态 `POST /v1/replans` 以及有状态的 `/schedules/{schedule_id}/events`、`/schedules/{schedule_id}/replan`。重排基于当前执行快照生成未来计划，不重写历史；新增或变更事件会在应用后再次执行 Schema 与业务规则校验。
 
 规则：
 

@@ -226,3 +226,25 @@ def test_replan_rejects_dangling_predecessor_added_by_event():
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_FAILED"
     assert any(detail["code"] == "DANGLING_PREDECESSOR" for detail in response.json()["error"]["details"])
+
+
+def test_replan_preserves_key_node_notifications_and_adds_change_notifications():
+    request, previous = current_schedule()
+    body = {
+        "event": event(
+            "event-delay-notifications",
+            previous["schedule_id"],
+            "TASK_DELAYED",
+            {"task_id": previous["tasks"][0]["task_id"], "delay_sec": 60},
+        ),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 200
+    result = response.json()
+    notifications = result["schedule"]["notifications"]
+    assert any(item["type"] == "task_due" for item in notifications)
+    assert any(item["type"] == "schedule_updated" for item in notifications)
+    validator = Draft202012Validator(SCHEMAS["notification.schema.json"], registry=REGISTRY)
+    assert all(not list(validator.iter_errors(item)) for item in notifications)
