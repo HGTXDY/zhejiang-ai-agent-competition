@@ -177,6 +177,7 @@ def schedule(
     *,
     locked_tasks: dict[str, dict[str, Any]] | None = None,
     start_floors: dict[str, int] | None = None,
+    include_notifications: bool = True,
 ) -> dict[str, Any]:
     """Create a V1-shaped schedule from a validated schedule request."""
     config = config or SchedulerConfig()
@@ -396,14 +397,17 @@ def schedule(
     objective_value = final_solver.Value(makespan)
     gap = max(0.0, objective_value - makespan_bound) if makespan_bound is not None else None
 
-    notification_started = perf_counter()
-    notifications, points_by_task = build_key_node_plan(scheduled_tasks, tasks)
-    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    for notification in notifications:
-        notification["created_at"] = created_at
-    for scheduled_task in scheduled_tasks:
-        scheduled_task["notification_points"] = points_by_task.get(scheduled_task["task_id"], [])
-    notification_ms = int((perf_counter() - notification_started) * 1000)
+    notification_ms = 0
+    notifications: list[dict[str, Any]] = []
+    if include_notifications:
+        notification_started = perf_counter()
+        notifications, points_by_task = build_key_node_plan(scheduled_tasks, tasks)
+        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        for notification in notifications:
+            notification["created_at"] = created_at
+        for scheduled_task in scheduled_tasks:
+            scheduled_task["notification_points"] = points_by_task.get(scheduled_task["task_id"], [])
+        notification_ms = int((perf_counter() - notification_started) * 1000)
 
     return {
         "schema_version": "1.0",
