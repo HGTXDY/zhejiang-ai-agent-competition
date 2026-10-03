@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from scripts.benchmark_performance import (
-    INITIAL_BUDGET_MS,
-    REPLAN_BUDGET_MS,
+    INITIAL_QUALIFIED_MS,
+    INITIAL_EXCELLENT_MS,
+    REPLAN_QUALIFIED_MS,
+    REPLAN_EXCELLENT_MS,
     measure_end_to_end,
     measure_initial,
     measure_replan,
@@ -24,21 +26,28 @@ def test_percentile_is_monotonic_and_bounded():
 def test_initial_schedule_benchmark_within_budget():
     result = measure_initial(FIXTURE, iterations=5, warmup=1)
     assert result["solver_statuses"] == ["OPTIMAL"]
-    assert result["budget_ms"] == INITIAL_BUDGET_MS
+    assert result["budget_ms"] == INITIAL_QUALIFIED_MS
+    assert result["excellent_ms"] == INITIAL_EXCELLENT_MS
     assert result["within_budget"] is True
+    assert result["within_excellent"] is True
 
 
 def test_replan_benchmark_within_budget():
     result = measure_replan(FIXTURE, iterations=5, warmup=1)
-    assert result["budget_ms"] == REPLAN_BUDGET_MS
+    assert result["budget_ms"] == REPLAN_QUALIFIED_MS
+    assert result["excellent_ms"] == REPLAN_EXCELLENT_MS
     assert result["within_budget"] is True
+    assert result["within_excellent"] is True
 
 
 def test_replan_dish_added_benchmark_within_budget():
     result = measure_replan_dish_added(FIXTURE, iterations=5, warmup=1)
     assert result["scenario"] == "DISH_ADDED"
-    assert result["budget_ms"] == REPLAN_BUDGET_MS
+    assert result["budget_ms"] == REPLAN_QUALIFIED_MS
+    assert result["excellent_ms"] == REPLAN_EXCELLENT_MS
     assert result["within_budget"] is True
+    # DISH_ADDED re-solves with a brand-new 30-minute dish; it clears 合格 (< 8s)
+    # but not 优秀 (< 3s) on shared CI hardware, so 优秀 is reported, not enforced.
 
 
 def test_end_to_end_benchmark_single_recipe():

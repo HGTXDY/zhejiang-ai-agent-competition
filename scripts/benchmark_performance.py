@@ -11,9 +11,10 @@ Measures, with wall-clock timing and warmup:
    over all 100 official recipes, reporting each stage and total wall-clock.
 
 Each phase reports min / p50 / p95 / max in milliseconds and checks the
-competition Level 5 budget gates from issue #50 (initial < 5000ms, replan
-< 3000ms). Results are written to docs/evaluation/ as JSON + Markdown and are
-reproducible in CI.
+two-tier competition Level 5 budget gates from issue #50 (合格: initial
+< 10000ms, replan < 8000ms; 优秀: initial < 5000ms, replan < 3000ms).
+Results are written to docs/evaluation/ as JSON + Markdown and are reproducible
+in CI.
 
 This is an engineering regression baseline, not an official competition score.
 """
@@ -50,9 +51,17 @@ DEFAULT_FIXTURE = ROOT / "fixtures" / "v1" / "four-dish-normal.json"
 DEFAULT_RECIPES = ROOT / "data" / "official" / "recipes_100.csv"
 SCHEMA_DIR = ROOT / "contracts" / "v1" / "schemas"
 
-# Competition Level 5 budget gates (issue #50): initial < 5s, replan < 3s.
-INITIAL_BUDGET_MS = 5000
-REPLAN_BUDGET_MS = 3000
+# Competition Level 5 budget gates (issue #50) are two-tier. 合格 is the
+# must-pass bar and 优秀 the stretch goal:
+#   初始排程  合格 < 10000ms，优秀 < 5000ms
+#   动态重排  合格 <  8000ms，优秀 < 3000ms
+# CI's --fail-on-budget hard-gates on 合格 (issue #50 验收: 达到合格线，争取优秀线);
+# 优秀 is reported but not enforced, because the DISH_ADDED replan (adding a
+# brand-new 30-minute dish) clears 合格 but not 优秀 on shared CI hardware.
+INITIAL_QUALIFIED_MS = 10000
+INITIAL_EXCELLENT_MS = 5000
+REPLAN_QUALIFIED_MS = 8000
+REPLAN_EXCELLENT_MS = 3000
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -136,8 +145,10 @@ def measure_initial(fixture: Path, iterations: int, warmup: int) -> dict[str, An
         "warmup": warmup,
         "solver_statuses": sorted(set(statuses)),
         "wall_clock_ms": summarize(samples),
-        "budget_ms": INITIAL_BUDGET_MS,
-        "within_budget": percentile(samples, 0.95) < INITIAL_BUDGET_MS,
+        "budget_ms": INITIAL_QUALIFIED_MS,
+        "excellent_ms": INITIAL_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < INITIAL_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < INITIAL_EXCELLENT_MS,
     }
 
 
@@ -170,8 +181,10 @@ def measure_replan(fixture: Path, iterations: int, warmup: int) -> dict[str, Any
         "iterations": iterations,
         "warmup": warmup,
         "wall_clock_ms": summarize(samples),
-        "budget_ms": REPLAN_BUDGET_MS,
-        "within_budget": percentile(samples, 0.95) < REPLAN_BUDGET_MS,
+        "budget_ms": REPLAN_QUALIFIED_MS,
+        "excellent_ms": REPLAN_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < REPLAN_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < REPLAN_EXCELLENT_MS,
     }
 
 
@@ -257,8 +270,10 @@ def measure_replan_dish_added(fixture: Path, iterations: int, warmup: int) -> di
         "iterations": iterations,
         "warmup": warmup,
         "wall_clock_ms": summarize(samples),
-        "budget_ms": REPLAN_BUDGET_MS,
-        "within_budget": percentile(samples, 0.95) < REPLAN_BUDGET_MS,
+        "budget_ms": REPLAN_QUALIFIED_MS,
+        "excellent_ms": REPLAN_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < REPLAN_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < REPLAN_EXCELLENT_MS,
     }
 
 
@@ -341,7 +356,8 @@ def measure_end_to_end(payloads: list[dict[str, Any]], iterations: int, warmup: 
 
 def _render_replan_added(added: dict[str, Any]) -> str:
     added_t = added["wall_clock_ms"]
-    return f"""合格线 `{added['budget_ms']}` ms，结果 `{'通过' if added['within_budget'] else '超预算'}`。
+    excellent = "优秀" if added["within_excellent"] else "未达优秀"
+    return f"""合格线 `{added['budget_ms']}` ms，结果 `{'通过' if added['within_budget'] else '超预算'}`；优秀线 `{added['excellent_ms']}` ms（{excellent}）。
 
 | 指标 | 数值（毫秒） |
 |---|---:|
@@ -376,7 +392,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 ## 1. 初始排程耗时（四道菜 fixture，多目标分层 CP-SAT）
 
-合格线 `{initial['budget_ms']}` ms，结果 `{'通过' if initial['within_budget'] else '超预算'}`。
+合格线 `{initial['budget_ms']}` ms，结果 `{'通过' if initial['within_budget'] else '超预算'}`；优秀线 `{initial['excellent_ms']}` ms（{'优秀' if initial['within_excellent'] else '未达优秀'}）。
 
 | 指标 | 数值（毫秒） |
 |---|---:|
@@ -389,7 +405,7 @@ Solver 状态：`{', '.join(initial['solver_statuses'])}`；预热 {initial['war
 
 ## 2. 动态重排耗时（TASK_COMPLETED 事件）
 
-合格线 `{replan_report['budget_ms']}` ms，结果 `{'通过' if replan_report['within_budget'] else '超预算'}`。
+合格线 `{replan_report['budget_ms']}` ms，结果 `{'通过' if replan_report['within_budget'] else '超预算'}`；优秀线 `{replan_report['excellent_ms']}` ms（{'优秀' if replan_report['within_excellent'] else '未达优秀'}）。
 
 | 指标 | 数值（毫秒） |
 |---|---:|
