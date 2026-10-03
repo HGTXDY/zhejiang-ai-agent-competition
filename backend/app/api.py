@@ -65,7 +65,7 @@ def _recipe_parser(*, strict: bool = False) -> RecipeParser:
 
 def _error_response(request_id: str, code: str, message: str, details: list[dict[str, Any]]) -> JSONResponse:
     return JSONResponse(
-        status_code=422 if code in {"INVALID_INPUT", "VALIDATION_FAILED"} else 409,
+        status_code=422 if code in {"INVALID_INPUT", "VALIDATION_FAILED", "PARSE_FAILED"} else 409,
         content={
             "schema_version": "1.0",
             "request_id": request_id,
