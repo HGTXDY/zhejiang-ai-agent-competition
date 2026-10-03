@@ -103,6 +103,14 @@
         "target_delay_sec": {
           "type": "integer",
           "minimum": 0
+        },
+        "serial_baseline_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "makespan_compression_ratio": {
+          "type": "number",
+          "minimum": 0
         }
       }
     },

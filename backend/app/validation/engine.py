@@ -370,3 +370,32 @@ def _dedupe(errors: Iterable[ValidationIssue]) -> list[ValidationIssue]:
             seen.add(key)
             result.append(error)
     return result
+
+
+def annotate_schedule_result(request: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Independently re-check a produced schedule and backfill conflict counts.
+
+    The solver enforces every hard constraint, so `device_conflicts` and
+    `dependency_violations` are zero by construction. Reporting a hard-coded
+    zero hides a solver bug, so the production path re-runs the same validator
+    used in tests and counts real violations. The result dict is mutated and
+    returned for convenience; infeasible/timeout results are returned as-is
+    because they already carry the error validation.
+    """
+    status = (result.get("solver") or {}).get("status")
+    if status in {"INFEASIBLE", "UNKNOWN"}:
+        return result
+    check = validate_schedule_result(request, result)
+    if check.valid:
+        return result
+    result["validation"] = check.as_dict()
+    metrics = result.setdefault("metrics", {})
+    metrics["device_conflicts"] = sum(
+        1
+        for error in check.errors
+        if error.code in {"DEVICE_CAPACITY_CONFLICT", "DEVICE_MODE_CONFLICT", "OPERATOR_CAPACITY_CONFLICT"}
+    )
+    metrics["dependency_violations"] = sum(
+        1 for error in check.errors if error.code == "DEPENDENCY_VIOLATION"
+    )
+    return result

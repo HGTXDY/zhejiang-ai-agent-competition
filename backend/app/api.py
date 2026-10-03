@@ -26,9 +26,11 @@ from app.catalog import get_recipe_payload, list_recipe_summaries
 from app.device_check import validate_device_config
 from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
 from app.parser.deterministic import DeterministicParserAdapter
+from app.parser.llm import LLMParserAdapter
 from app.replan import ReplanError, apply_event_to_request, replan
 from app.scheduler import schedule
 from app.store import ScheduleStore, store
+from app.validation import annotate_schedule_result
 from scripts.validate_contracts import validate_schedule_request_business_rules
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,7 +61,9 @@ RECIPE_VALIDATOR = Draft202012Validator(
 )
 
 
-def _recipe_parser(*, strict: bool = False) -> RecipeParser:
+def _recipe_parser(*, strict: bool = False, provider: str = "deterministic") -> RecipeParser:
+    if provider == "llm":
+        return RecipeParser(LLMParserAdapter(strict=strict), provider="llm")
     return RecipeParser(DeterministicParserAdapter(strict=strict))
 
 
@@ -137,6 +141,7 @@ def _create_schedule(payload: dict[str, Any], registry: ScheduleStore) -> Any:
             "request_id": request_id,
             "error": {"code": "SCHEDULE_INFEASIBLE", "message": "No feasible schedule found", "details": result["validation"]["errors"]},
         })
+    annotate_schedule_result(payload, result)
     registry.put(payload, result)
     return result
 
@@ -214,7 +219,7 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
         return payload
 
     @app.post("/recipes/parse")
-    def parse_recipe(payload: dict[str, Any], strict: bool = False) -> Any:
+    def parse_recipe(payload: dict[str, Any], strict: bool = False, provider: str = "deterministic") -> Any:
         request_id = str(payload.get("recipe_id") or "unknown")
         recipe_errors = sorted(
             RECIPE_VALIDATOR.iter_errors(payload), key=lambda error: list(error.absolute_path)
@@ -234,7 +239,7 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
                 ],
             )
         try:
-            result = _recipe_parser(strict=strict).parse(payload)
+            result = _recipe_parser(strict=strict, provider=provider).parse(payload)
         except InputRecipeError as error:
             return _error_response(request_id, "INVALID_INPUT", str(error), [])
         except ParsedTaskError as error:

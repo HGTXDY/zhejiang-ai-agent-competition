@@ -6,6 +6,7 @@ from scripts.benchmark_performance import (
     measure_end_to_end,
     measure_initial,
     measure_replan,
+    measure_replan_dish_added,
     percentile,
 )
 
@@ -21,14 +22,21 @@ def test_percentile_is_monotonic_and_bounded():
 
 
 def test_initial_schedule_benchmark_within_budget():
-    result = measure_initial(FIXTURE, iterations=3, warmup=1)
+    result = measure_initial(FIXTURE, iterations=5, warmup=1)
     assert result["solver_statuses"] == ["OPTIMAL"]
     assert result["budget_ms"] == INITIAL_BUDGET_MS
     assert result["within_budget"] is True
 
 
 def test_replan_benchmark_within_budget():
-    result = measure_replan(FIXTURE, iterations=3, warmup=1)
+    result = measure_replan(FIXTURE, iterations=5, warmup=1)
+    assert result["budget_ms"] == REPLAN_BUDGET_MS
+    assert result["within_budget"] is True
+
+
+def test_replan_dish_added_benchmark_within_budget():
+    result = measure_replan_dish_added(FIXTURE, iterations=5, warmup=1)
+    assert result["scenario"] == "DISH_ADDED"
     assert result["budget_ms"] == REPLAN_BUDGET_MS
     assert result["within_budget"] is True
 

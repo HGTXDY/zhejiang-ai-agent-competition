@@ -40,11 +40,16 @@ V1 采用字典序最小化：
 
 实现方式可以是多阶段求解：每一阶段固定上一阶段最优值；也可以使用经过证明不会改变字典序的权重编码。默认优先使用多阶段求解，避免权重上界变化造成目标层级错误。
 
-## 与现有 CP-SAT 基线的边界
+## 与 CP-SAT 实现的对应关系
 
-当前 CP-SAT 基线只优化 `makespan`。本设计和 `backend/app/metrics/multi_objective.py` 提供后续接入所需的稳定口径，不宣称已经完成多目标求解。接入时必须补充：
+`backend/app/scheduler/cp_sat.py` 已按上述字典序落地分层求解：阶段一固定 `finish_spread` 上界，
+阶段二在该约束下最小化 `makespan`，阶段三再最小化 `max_continuous_manual_sec`。每个阶段记录
+求解状态、耗时与 bound/gap，指标写入 `schedule-response.metrics`：
 
-- 每层求解状态、耗时和 bound/gap；
-- 与串行基线的量化对比；
-- 多菜、单菜、无法收敛和超时用例；
-- 指标结果写入 `schedule-response.metrics`。
+- `makespan_sec`、`finish_spread_sec`、`max_continuous_manual_sec`；
+- `serial_baseline_sec`（串行基线，所有任务 `duration_sec` 之和）与
+  `makespan_compression_ratio`（= makespan / 串行基线，报告并行收益，对应赛题「总烹饪时间压缩率」）；
+- `device_conflicts` / `dependency_violations` 由独立结果校验器复检后写入（见 `VALIDATION_ENGINE.md`），
+  不再硬编码 0。
+
+指标模块（`app/metrics/multi_objective.py`）不依赖 OR-Tools，调度器与报告共用同一口径。

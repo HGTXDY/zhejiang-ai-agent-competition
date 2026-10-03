@@ -63,11 +63,13 @@ def build_key_node_plan(
                 seg_action = segment.get("action") or task_action
                 if seg_start > start:
                     prep_offset = max(0, seg_start - prep_lead_sec)
+                    lead_min = prep_lead_sec // 60
+                    prep_message = f"{lead_min} 分钟后需要：{seg_action}" if lead_min >= 1 else f"即将需要：{seg_action}"
                     nodes.append(
-                        {"type": "prepare", "offset_sec": prep_offset, "action": seg_action, "message": f"提前准备：{seg_action}"}
+                        {"type": "prepare", "offset_sec": prep_offset, "action": seg_action, "message": prep_message}
                     )
                 nodes.append(
-                    {"type": "manual", "offset_sec": seg_start, "action": seg_action, "message": f"需要操作：{seg_action}"}
+                    {"type": "manual", "offset_sec": seg_start, "action": seg_action, "message": f"现在可以开始：{seg_action}"}
                 )
             last_segment_end = start + segments[-1]["offset_sec"] + segments[-1]["duration_sec"]
             if end - last_segment_end > 30:
@@ -76,7 +78,7 @@ def build_key_node_plan(
                 )
         elif definition.get("manual_required"):
             # Pure manual task: the operator's whole job is the key node.
-            nodes.append({"type": "start", "offset_sec": start, "action": task_action, "message": f"开始：{task_action}"})
+            nodes.append({"type": "start", "offset_sec": start, "action": task_action, "message": f"现在可以开始：{task_action}"})
             nodes.append({"type": "complete", "offset_sec": end, "action": task_action, "message": f"完成：{task_action}"})
         elif requirement is not None:
             # Pure device tasks still need an end-of-cycle reminder; otherwise
