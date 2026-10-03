@@ -190,7 +190,23 @@ def schedule(
     manual_merge_gap_sec = (
         int(objective["manual_merge_gap_sec"]) if objective.get("manual_merge_gap_sec") is not None else 30
     )
-    horizon = sum(task["duration_sec"] for task in tasks)
+    # The aggregate duration is a useful baseline, but dynamic replanning may
+    # pin a task far into the future (for example after a delay event).  The
+    # model horizon must cover every fixed lower bound as well as the work
+    # itself; otherwise a valid delayed/locked schedule is rejected merely
+    # because its end lies beyond the old aggregate horizon.
+    baseline_horizon = sum(task["duration_sec"] for task in tasks)
+    task_ids = {task["task_id"] for task in tasks}
+    latest_fixed_start = max(
+        [
+            *[start_floors[task_id] for task_id in start_floors if task_id in task_ids],
+            *[locked["start_offset_sec"] for task_id, locked in locked_tasks.items() if task_id in task_ids],
+            0,
+        ]
+    )
+    # Keep one aggregate-duration worth of slack after the latest fixed start,
+    # because dependent or resource-conflicting tasks may all have to follow it.
+    horizon = max(baseline_horizon + latest_fixed_start, 1)
     model = cp_model.CpModel()
     starts: dict[str, cp_model.IntVar] = {}
     ends: dict[str, cp_model.IntVar] = {}

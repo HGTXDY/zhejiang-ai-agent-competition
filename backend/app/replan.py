@@ -46,6 +46,26 @@ def _schema_errors(validator: Draft202012Validator, value: dict[str, Any]) -> li
     ]
 
 
+def apply_event_to_request(request: dict[str, Any], event: dict[str, Any]) -> None:
+    """Mutate a schedule request in place to reflect an accepted event.
+
+    DISH_ADDED appends new tasks; DEVICE_UNAVAILABLE marks the affected device
+    unavailable. The replan service and the stateful REST layer share this helper
+    so a stored request always stays in sync with the latest schedule lineage.
+    """
+    if event["event_type"] == "DISH_ADDED":
+        request_by_id = {task["task_id"] for task in request["tasks"]}
+        for task in event["payload"]["tasks"]:
+            if task["task_id"] not in request_by_id:
+                request["tasks"].append(task)
+                request_by_id.add(task["task_id"])
+    if event["event_type"] == "DEVICE_UNAVAILABLE":
+        device_id = event["payload"]["device_id"]
+        for device in request["device_config"]["devices"]:
+            if device["device_id"] == device_id:
+                device["available"] = False
+
+
 def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     """Apply one event and produce a V1 replan response.
 
@@ -92,17 +112,18 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
         raise ReplanError(error.code, error.message) from error
     updated = machine.schedule
 
-    request_by_id = {task["task_id"]: task for task in request["tasks"]}
-    if event["event_type"] == "DISH_ADDED":
-        for task in event["payload"]["tasks"]:
-            if task["task_id"] not in request_by_id:
-                request["tasks"].append(task)
-                request_by_id[task["task_id"]] = task
-    if event["event_type"] == "DEVICE_UNAVAILABLE":
-        device_id = event["payload"]["device_id"]
-        for device in request["device_config"]["devices"]:
-            if device["device_id"] == device_id:
-                device["available"] = False
+    apply_event_to_request(request, event)
+    # Events can append tasks or change device availability.  Re-run the
+    # cross-object business rules after applying the event so malformed event
+    # payloads (for example a dangling predecessor) become a stable 422 rather
+    # than a scheduler KeyError/500.
+    updated_business_errors = validate_schedule_request_business_rules(request)
+    if updated_business_errors:
+        raise ReplanError(
+            "VALIDATION_FAILED",
+            "Event produces a schedule request that violates V1 business rules",
+            details=[{"code": code, "message": code, "path": None} for code in updated_business_errors],
+        )
 
     current_tasks = {task["task_id"]: task for task in updated.get("tasks", [])}
     locked_tasks = {

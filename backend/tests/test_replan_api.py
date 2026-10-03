@@ -211,3 +211,18 @@ def test_replan_rejects_ui_only_resources_field_in_current_schedule():
     assert response.json()["error"]["code"] == "INVALID_INPUT"
     messages = " ".join(detail["message"] for detail in response.json()["error"]["details"])
     assert "resources" in messages
+
+
+def test_replan_rejects_dangling_predecessor_added_by_event():
+    request, previous = current_schedule()
+    new_task = dict(request["tasks"][0], task_id="added-dangling", dish_id="dish-added")
+    new_task["predecessors"] = ["does-not-exist"]
+    body = {
+        "event": event("event-add-dangling", previous["schedule_id"], "DISH_ADDED", {"tasks": [new_task]}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert any(detail["code"] == "DANGLING_PREDECESSOR" for detail in response.json()["error"]["details"])
