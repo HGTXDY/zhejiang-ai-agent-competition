@@ -40,6 +40,22 @@ _DEVICE_VERBS: list[tuple[str, str]] = [
     ("煎|炒|炸|烧|煮|炖|焖|煲|烙|煸|爆|焯", "stove"),
 ]
 
+# Combo steam-oven equipment (蒸烤箱 / 蒸烤一体机 / 方太智能烹饪设备) can steam
+# or bake depending on the selected mode. These aliases must be resolved by mode,
+# not by the bare "烤箱" noun, before the generic noun loop runs.
+_COMBO_DEVICE = re.compile(r"蒸烤|蒸烤一体|烹饪机|智能烹饪")
+
+# Explicit mode signals only (no bare "蒸"/"烤"), mirroring _MODE_TABLE so a step
+# that merely names "蒸烤箱" is not auto-attributed to either side.
+_STEAM_MODE_SIGNAL = re.compile(r"普通蒸|常规蒸|鲜嫩蒸|嫩蒸|脱脂蒸|多层蒸")
+_OVEN_MODE_SIGNAL = re.compile(
+    r"空气炸|气炸|上下火|全开烤|全开|鼓风烤|热风|风烤|顶部烤|顶部|加湿烤|加湿|"
+    r"环风烤|环风|脱脂烤|脱脂|蔬果干|风干|发酵|醒发|烘焙|烘烤"
+)
+# A steam oven draws water from its tank; refilling it is a documented inference
+# that the step steams rather than bakes when no explicit mode is spelled out.
+_WATER_TANK_SIGNAL = re.compile(r"水箱|加满水")
+
 _MODE_TABLE: dict[str, list[tuple[str, str]]] = {
     "oven": [
         ("空气炸|气炸", "air_fry"),
@@ -105,8 +121,12 @@ _DEFAULT_TEMPERATURE_C: dict[str, int] = {
     "oven": 180,
     "steamer": 100,
     "stove": 100,
-    "refrigerator": 4,
     "water_purifier": 60,
+}
+_REFRIGERATOR_DEFAULT_TEMPERATURE_C: dict[str, int] = {
+    "freeze": -18,
+    "chill": 4,
+    "thaw": 4,
 }
 
 # Fallback durations when a step carries no explicit time. Device cooking times
@@ -152,8 +172,32 @@ def extract_temperature_c(text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _detect_combo_device_type(text: str) -> str | None:
+    """Resolve a combo steam-oven step to `steamer`/`oven` by its explicit mode.
+
+    Returns `None` when the step is not combo equipment, or when it is combo
+    equipment but carries no steam/oven signal (the machine auto-selects the mode
+    and the step text cannot recover it).
+    """
+    if not _COMBO_DEVICE.search(text):
+        return None
+    if _STEAM_MODE_SIGNAL.search(text):
+        return "steamer"
+    if _OVEN_MODE_SIGNAL.search(text):
+        return "oven"
+    if _WATER_TANK_SIGNAL.search(text):
+        return "steamer"
+    return None
+
+
 def detect_device_type(text: str) -> str | None:
     """Return the V1 device_type for a step, or None for manual/wait steps."""
+    combo_type = _detect_combo_device_type(text)
+    if combo_type is not None:
+        return combo_type
+    if _COMBO_DEVICE.search(text):
+        # Combo equipment with no recoverable mode: don't guess steam vs oven.
+        return None
     for pattern, device_type in _DEVICE_NOUNS:
         if re.search(pattern, text):
             return device_type
@@ -215,10 +259,8 @@ def default_device_config(operator_count: int = 1) -> dict[str, Any]:
         {"device_id": "oven_1", "device_type": "oven", "capacity_units": 2,
          "temperature_min_c": 30, "temperature_max_c": 250},
         {"device_id": "refrigerator_1", "device_type": "refrigerator", "capacity_units": 3,
-         # V1 device schema clamps temperature_min_c to >= 0, and the parser only
-         # emits 冷藏/解冻 tasks (default 4°C); the freezer's sub-zero range is
-         # deferred to device-enum alignment (#48).
-         "temperature_min_c": 0, "temperature_max_c": 10},
+         # Covers both official refrigerator ranges: 冷藏 0~10℃ and 冷冻 -24~-15℃.
+         "temperature_min_c": -24, "temperature_max_c": 10},
         {"device_id": "dishwasher_1", "device_type": "dishwasher", "capacity_units": 1,
          "temperature_min_c": None, "temperature_max_c": None},
         {"device_id": "range_hood_1", "device_type": "range_hood", "capacity_units": 1,
@@ -339,9 +381,14 @@ class DeterministicParserAdapter:
             return base
 
         resolved_duration = duration if duration is not None else _DEFAULT_DURATION_SEC[device_type]
+        mode = detect_mode(text, device_type)
         temperature = extract_temperature_c(text)
         if temperature is None:
-            temperature = _DEFAULT_TEMPERATURE_C.get(device_type)
+            temperature = (
+                _REFRIGERATOR_DEFAULT_TEMPERATURE_C.get(mode)
+                if device_type == "refrigerator"
+                else _DEFAULT_TEMPERATURE_C.get(device_type)
+            )
         manual_required = bool(_MANUAL_ACTIONS.search(text))
         segments = _manual_segments(text, resolved_duration) if manual_required else []
         manual_duration = sum(segment["duration_sec"] for segment in segments) if manual_required else 0
@@ -356,7 +403,7 @@ class DeterministicParserAdapter:
             manual_duration_sec=manual_duration,
             device_requirement={
                 "device_type": device_type,
-                "mode": detect_mode(text, device_type),
+                "mode": mode,
                 "temperature_c": temperature,
                 "capacity_units": 1,
             },

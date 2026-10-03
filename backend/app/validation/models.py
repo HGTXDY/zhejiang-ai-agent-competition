@@ -17,8 +17,9 @@ class V1Model(BaseModel):
 
 class DeviceCapabilities(V1Model):
     modes: list[str] = Field(default_factory=list, min_length=0)
-    temperature_min_c: int | None = Field(default=None, ge=0, le=500)
-    temperature_max_c: int | None = Field(default=None, ge=0, le=500)
+    # Lower bound -50 covers the refrigerator's 冷冻 -24~-15℃ official range.
+    temperature_min_c: int | None = Field(default=None, ge=-50, le=500)
+    temperature_max_c: int | None = Field(default=None, ge=-50, le=500)
 
     @model_validator(mode="after")
     def valid_temperature_range(self) -> "DeviceCapabilities":
@@ -51,7 +52,7 @@ class ManualSegment(V1Model):
 class DeviceRequirement(V1Model):
     device_type: DeviceType
     mode: str | None = Field(default=None, min_length=1)
-    temperature_c: int | None = Field(default=None, ge=0, le=500)
+    temperature_c: int | None = Field(default=None, ge=-50, le=500)
     capacity_units: int = Field(ge=1)
 
 

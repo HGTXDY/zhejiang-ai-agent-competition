@@ -93,3 +93,69 @@ def test_default_device_config_satisfies_v1_device_schema():
     validator = Draft202012Validator(schema)
     config = default_device_config()
     assert list(validator.iter_errors(config)) == []
+
+
+def test_combo_oven_steamer_splits_by_explicit_mode():
+    parser = RecipeParser(DeterministicParserAdapter())
+
+    steamed = parser.parse(_recipe("combo_steam", ["放入蒸烤箱，普通蒸100度15分钟后取出。"])).tasks
+    steam_task = next(task for task in steamed if task["resource_type"] in {"device", "hybrid"})
+    assert steam_task["device_requirement"]["device_type"] == "steamer"
+    assert steam_task["device_requirement"]["mode"] == "normal_steam"
+
+    baked = parser.parse(_recipe("combo_bake", ["放入蒸烤箱，上下火180度烤20分钟。"])).tasks
+    oven_task = next(task for task in baked if task["resource_type"] in {"device", "hybrid"})
+    assert oven_task["device_requirement"]["device_type"] == "oven"
+    assert oven_task["device_requirement"]["mode"] == "upper_lower_heat"
+
+
+def test_combo_oven_steamer_infers_steam_from_water_tank():
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(
+        _recipe("combo_tank", ["放入方太智能烹饪设备第2层，开启电源，取出水箱加满水，选择开始烹饪按键，按屏幕提示操作。"])
+    ).tasks
+    device_tasks = [task for task in tasks if task["resource_type"] in {"device", "hybrid"}]
+    assert device_tasks
+    assert all(task["device_requirement"]["device_type"] == "steamer" for task in device_tasks)
+
+
+def test_combo_oven_steamer_without_signal_is_not_guessed():
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(
+        _recipe("combo_none", ["打开方太智能烹饪设备，选择开始烹饪按键，按屏幕提示操作。"])
+    ).tasks
+    assert all(task["resource_type"] in {"manual", "wait"} for task in tasks)
+
+
+def test_net_cafe_combo_maps_to_water_purifier_with_coffee_mode():
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(_recipe("coffee", ["使用净咖一体机，选择美式模式，60度即热出水。"])).tasks
+    device_task = next(task for task in tasks if task["resource_type"] in {"device", "hybrid"})
+    assert device_task["device_requirement"]["device_type"] == "water_purifier"
+    assert device_task["device_requirement"]["mode"] == "coffee"
+
+
+def test_refrigerator_capability_covers_freezer_range():
+    config = default_device_config()
+    fridge = next(device for device in config["devices"] if device["device_type"] == "refrigerator")
+    assert fridge["capabilities"]["temperature_min_c"] == -24
+    assert fridge["capabilities"]["temperature_max_c"] == 10
+
+
+def test_freeze_mode_defaults_to_freezer_temperature() -> None:
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(_recipe("freeze_default", ["放入冰箱冷冻，定型后取出。"])).tasks
+    task = next(task for task in tasks if task["resource_type"] in {"device", "hybrid"})
+    requirement = task["device_requirement"]
+    assert requirement["device_type"] == "refrigerator"
+    assert requirement["mode"] == "freeze"
+    assert requirement["temperature_c"] == -18
+    assert task["field_status"]["temperature_c"] == "inferred"
+
+
+def test_chill_mode_keeps_refrigerator_temperature() -> None:
+    parser = RecipeParser(DeterministicParserAdapter())
+    tasks = parser.parse(_recipe("chill_default", ["放入冰箱冷藏，静置后取出。"])).tasks
+    task = next(task for task in tasks if task["resource_type"] in {"device", "hybrid"})
+    assert task["device_requirement"]["mode"] == "chill"
+    assert task["device_requirement"]["temperature_c"] == 4
