@@ -45,4 +45,8 @@ def test_end_to_end_benchmark_single_recipe():
     result = measure_end_to_end([payload], iterations=2, warmup=1)
     assert result["recipes"] == 1
     assert result["solver_statuses"] == ["OPTIMAL"]
+    assert result["pipeline"] == ["parse", "schema_and_business_validation", "solve", "notification"]
+    assert result["validation_ms"]["max"] > 0
+    assert result["solve_ms"]["max"] > 0
+    assert result["notification_ms"]["max"] >= 0
     assert result["total_ms"]["max"] > 0

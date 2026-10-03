@@ -7,8 +7,8 @@ Measures, with wall-clock timing and warmup:
    fixture (the representative multi-dish scenario);
 2. dynamic replan — one TASK_COMPLETED event applied through the event-driven
    replan service (state machine + re-solve + diff);
-3. end-to-end — parse -> validate -> schedule over all 100 official recipes,
-   reporting per-recipe parse, schedule and total wall-clock.
+3. end-to-end — parse -> schema/business validation -> solve -> notification
+   over all 100 official recipes, reporting each stage and total wall-clock.
 
 Each phase reports min / p50 / p95 / max in milliseconds and checks the
 competition Level 5 budget gates from issue #50 (initial < 5000ms, replan
@@ -31,18 +31,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator, FormatChecker
+from referencing import Registry, Resource
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.parser import DeterministicParserAdapter, RecipeParser  # noqa: E402
 from app.parser.deterministic import default_device_config  # noqa: E402
+from app.notifications import build_key_node_plan  # noqa: E402
 from app.replan import replan  # noqa: E402
 from app.scheduler import schedule  # noqa: E402
 from scripts.build_annotation_template import split_steps  # noqa: E402
+from scripts.validate_contracts import validate_schedule_request_business_rules  # noqa: E402
 
 DEFAULT_FIXTURE = ROOT / "fixtures" / "v1" / "four-dish-normal.json"
 DEFAULT_RECIPES = ROOT / "data" / "official" / "recipes_100.csv"
+SCHEMA_DIR = ROOT / "contracts" / "v1" / "schemas"
 
 # Competition Level 5 budget gates (issue #50): initial < 5s, replan < 3s.
 INITIAL_BUDGET_MS = 5000
@@ -169,39 +175,66 @@ def measure_replan(fixture: Path, iterations: int, warmup: int) -> dict[str, Any
     }
 
 
+def _schedule_request_validator() -> Draft202012Validator:
+    schemas = {path.name: json.loads(path.read_text(encoding="utf-8")) for path in SCHEMA_DIR.glob("*.json")}
+    registry = Registry().with_resources(
+        (name, Resource.from_contents(schema)) for name, schema in schemas.items()
+    )
+    return Draft202012Validator(
+        schemas["schedule-request.schema.json"],
+        registry=registry,
+        format_checker=FormatChecker(),
+    )
+
+
 def measure_end_to_end(payloads: list[dict[str, Any]], iterations: int, warmup: int) -> dict[str, Any]:
     parser = RecipeParser(DeterministicParserAdapter())
     device_config = default_device_config()
+    validator = _schedule_request_validator()
 
-    def run_once() -> tuple[list[float], list[float], list[float], list[str]]:
-        parse_samples: list[float] = []
-        schedule_samples: list[float] = []
-        total_samples: list[float] = []
+    def run_once() -> tuple[dict[str, list[float]], list[str]]:
+        samples = {name: [] for name in ("parse", "validation", "solve", "notification", "total")}
         statuses: list[str] = []
         for payload in payloads:
             started = time.perf_counter()
             tasks = list(parser.parse(payload).tasks)
             parsed_at = time.perf_counter()
-            result = schedule(_schedule_request(payload["recipe_id"], tasks, device_config))
-            finished = time.perf_counter()
-            parse_samples.append((parsed_at - started) * 1000)
-            schedule_samples.append((finished - parsed_at) * 1000)
-            total_samples.append((finished - started) * 1000)
+
+            request = _schedule_request(payload["recipe_id"], tasks, device_config)
+            schema_errors = list(validator.iter_errors(request))
+            business_errors = validate_schedule_request_business_rules(request)
+            validated_at = time.perf_counter()
+            if schema_errors or business_errors:
+                raise RuntimeError(
+                    f"end-to-end validation failed for {payload['recipe_id']}: "
+                    f"schema={len(schema_errors)}, business={business_errors}"
+                )
+
+            result = schedule(request, include_notifications=False)
+            solved_at = time.perf_counter()
+            notifications, points_by_task = build_key_node_plan(result["tasks"], tasks)
+            for task in result["tasks"]:
+                task["notification_points"] = points_by_task.get(task["task_id"], [])
+            result["notifications"] = notifications
+            notified_at = time.perf_counter()
+
+            samples["parse"].append((parsed_at - started) * 1000)
+            samples["validation"].append((validated_at - parsed_at) * 1000)
+            samples["solve"].append((solved_at - validated_at) * 1000)
+            samples["notification"].append((notified_at - solved_at) * 1000)
+            samples["total"].append((notified_at - started) * 1000)
             statuses.append(result["solver"]["status"])
-        return parse_samples, schedule_samples, total_samples, statuses
+        return samples, statuses
 
     for _ in range(warmup):
         run_once()
 
-    all_parse: list[float] = []
-    all_schedule: list[float] = []
-    all_total: list[float] = []
+    all_samples = {name: [] for name in ("parse", "validation", "solve", "notification", "total")}
     all_statuses: list[str] = []
     for _ in range(iterations):
-        parse_samples, schedule_samples, total_samples, statuses = run_once()
-        all_parse.extend(parse_samples)
-        all_schedule.extend(schedule_samples)
-        all_total.extend(total_samples)
+        samples, statuses = run_once()
+        for name, values in samples.items():
+            all_samples[name].extend(values)
         all_statuses.extend(statuses)
 
     if any(status not in {"OPTIMAL", "FEASIBLE"} for status in all_statuses):
@@ -210,14 +243,11 @@ def measure_end_to_end(payloads: list[dict[str, Any]], iterations: int, warmup: 
         "recipes": len(payloads),
         "iterations": iterations,
         "warmup": warmup,
+        "pipeline": ["parse", "schema_and_business_validation", "solve", "notification"],
         "solver_statuses": sorted(set(all_statuses)),
-        "parse_ms": summarize(all_parse),
-        "schedule_ms": summarize(all_schedule),
-        "total_ms": summarize(all_total),
+        **{f"{name}_ms": summarize(values) for name, values in all_samples.items()},
         "aggregate": {
-            "parse_total_ms": round(sum(all_parse), 3),
-            "schedule_total_ms": round(sum(all_schedule), 3),
-            "end_to_end_total_ms": round(sum(all_total), 3),
+            f"{name}_total_ms": round(sum(values), 3) for name, values in all_samples.items()
         },
     }
 
@@ -267,17 +297,19 @@ Solver 状态：`{', '.join(initial['solver_statuses'])}`；预热 {initial['war
 
 预热 {replan_report['warmup']} 次、测量 {replan_report['iterations']} 次。
 
-## 3. 端到端耗时（解析 → 校验 → 调度，100 道官方菜谱）
+## 3. 端到端耗时（解析 → Schema/业务校验 → 求解 → 通知，100 道官方菜谱）
 
 单道菜谱耗时分布（毫秒）：
 
 | 阶段 | min | p50 | p95 | max |
 |---|---:|---:|---:|---:|
 | 解析 | {e2e['parse_ms']['min']} | {e2e['parse_ms']['p50']} | {e2e['parse_ms']['p95']} | {e2e['parse_ms']['max']} |
-| 调度 | {e2e['schedule_ms']['min']} | {e2e['schedule_ms']['p50']} | {e2e['schedule_ms']['p95']} | {e2e['schedule_ms']['max']} |
+| Schema + 业务校验 | {e2e['validation_ms']['min']} | {e2e['validation_ms']['p50']} | {e2e['validation_ms']['p95']} | {e2e['validation_ms']['max']} |
+| 求解 | {e2e['solve_ms']['min']} | {e2e['solve_ms']['p50']} | {e2e['solve_ms']['p95']} | {e2e['solve_ms']['max']} |
+| 通知 | {e2e['notification_ms']['min']} | {e2e['notification_ms']['p50']} | {e2e['notification_ms']['p95']} | {e2e['notification_ms']['max']} |
 | 合计 | {e2e['total_ms']['min']} | {e2e['total_ms']['p50']} | {e2e['total_ms']['p95']} | {e2e['total_ms']['max']} |
 
-100 道菜批量总计（{e2e['iterations']} 轮累计）：解析 {e2e['aggregate']['parse_total_ms']} ms，调度 {e2e['aggregate']['schedule_total_ms']} ms，端到端 {e2e['aggregate']['end_to_end_total_ms']} ms。Solver 状态：`{', '.join(e2e['solver_statuses'])}`。
+100 道菜批量总计（{e2e['iterations']} 轮累计）：解析 {e2e['aggregate']['parse_total_ms']} ms，校验 {e2e['aggregate']['validation_total_ms']} ms，求解 {e2e['aggregate']['solve_total_ms']} ms，通知 {e2e['aggregate']['notification_total_ms']} ms，端到端 {e2e['aggregate']['total_total_ms']} ms。Solver 状态：`{', '.join(e2e['solver_statuses'])}`。
 
 ## 复现命令
 
