@@ -1,0 +1,27 @@
+{
+  "strict": false,
+  "recipes_total": 100,
+  "parsed_ok": 100,
+  "parse_failed": 0,
+  "failed": [],
+  "schema_invalid": 0,
+  "schedule_status": {
+    "OPTIMAL": 100
+  },
+  "field_status": {
+    "device_mode.not_applicable": 567,
+    "device_mode.provided": 215,
+    "device_type.not_applicable": 567,
+    "device_type.provided": 215,
+    "duration_sec.defaulted": 685,
+    "duration_sec.provided": 97,
+    "manual_duration_sec.defaulted": 508,
+    "manual_duration_sec.inferred": 191,
+    "manual_duration_sec.not_applicable": 60,
+    "manual_duration_sec.provided": 23,
+    "temperature_c.inferred": 182,
+    "temperature_c.not_applicable": 567,
+    "temperature_c.provided": 33
+  },
+  "strict_blocks": 81
+}
