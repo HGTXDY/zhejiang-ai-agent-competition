@@ -14,6 +14,7 @@ export async function postEvent(
 ): Promise<{ task: DashboardTask; notification: Notification }> {
   await wait()
   const labels: Partial<Record<DashboardTask['status'], string>> = {
+    RUNNING: '开始执行',
     COMPLETED: '完成',
     DELAYED: '延迟',
     EXCEPTION: '设备异常',
