@@ -14,12 +14,14 @@ quantity and the reported `max_continuous_manual_sec` are the same metric.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
 from ortools.sat.python import cp_model
 
 from app.metrics import finish_spread_sec, max_continuous_manual_sec
+from app.notifications import build_key_node_plan
 
 
 @dataclass(frozen=True)
@@ -188,7 +190,23 @@ def schedule(
     manual_merge_gap_sec = (
         int(objective["manual_merge_gap_sec"]) if objective.get("manual_merge_gap_sec") is not None else 30
     )
-    horizon = sum(task["duration_sec"] for task in tasks)
+    # The aggregate duration is a useful baseline, but dynamic replanning may
+    # pin a task far into the future (for example after a delay event).  The
+    # model horizon must cover every fixed lower bound as well as the work
+    # itself; otherwise a valid delayed/locked schedule is rejected merely
+    # because its end lies beyond the old aggregate horizon.
+    baseline_horizon = sum(task["duration_sec"] for task in tasks)
+    task_ids = {task["task_id"] for task in tasks}
+    latest_fixed_start = max(
+        [
+            *[start_floors[task_id] for task_id in start_floors if task_id in task_ids],
+            *[locked["start_offset_sec"] for task_id, locked in locked_tasks.items() if task_id in task_ids],
+            0,
+        ]
+    )
+    # Keep one aggregate-duration worth of slack after the latest fixed start,
+    # because dependent or resource-conflicting tasks may all have to follow it.
+    horizon = max(baseline_horizon + latest_fixed_start, 1)
     model = cp_model.CpModel()
     starts: dict[str, cp_model.IntVar] = {}
     ends: dict[str, cp_model.IntVar] = {}
@@ -377,6 +395,16 @@ def schedule(
     )
     objective_value = final_solver.Value(makespan)
     gap = max(0.0, objective_value - makespan_bound) if makespan_bound is not None else None
+
+    notification_started = perf_counter()
+    notifications, points_by_task = build_key_node_plan(scheduled_tasks, tasks)
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    for notification in notifications:
+        notification["created_at"] = created_at
+    for scheduled_task in scheduled_tasks:
+        scheduled_task["notification_points"] = points_by_task.get(scheduled_task["task_id"], [])
+    notification_ms = int((perf_counter() - notification_started) * 1000)
+
     return {
         "schema_version": "1.0",
         "request_id": request["request_id"],
@@ -398,6 +426,6 @@ def schedule(
         },
         "tasks": scheduled_tasks,
         "validation": {"valid": True, "errors": []},
-        "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": 0, "total": elapsed_ms},
-        "notifications": [],
+        "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": notification_ms, "total": elapsed_ms + notification_ms},
+        "notifications": notifications,
     }
