@@ -1,7 +1,27 @@
+import { ApiError } from '../lib/errors'
 import { initialSchedule } from './schedule'
 import type { DashboardSchedule, DashboardTask, Notification } from '../types/contracts'
 
 const wait = (ms = 220) => new Promise(resolve => window.setTimeout(resolve, ms))
+
+export type MockFault = 'none' | 'infeasible' | 'timeout' | 'network'
+
+let mockFault: MockFault = 'none'
+
+/** Select the failure the mock API simulates on the next event. The demo uses
+ * this to exercise the 409 / 504 / network-failure paths a live backend would
+ * surface, since the mock otherwise never rejects. */
+export function setMockFault(fault: MockFault) { mockFault = fault }
+export function getMockFault(): MockFault { return mockFault }
+
+function throwFault() {
+  switch (mockFault) {
+    case 'infeasible': throw new ApiError('当前约束下无法生成可行排程', 409, 'NO_FEASIBLE_SCHEDULE')
+    case 'timeout': throw new ApiError('求解器在时限内未收敛', 504, 'SOLVER_TIMEOUT')
+    case 'network': throw new TypeError('Failed to fetch')
+    case 'none': return
+  }
+}
 
 export async function getSchedule(): Promise<DashboardSchedule> {
   await wait()
@@ -12,6 +32,7 @@ export async function postEvent(
   task: DashboardTask,
   status: DashboardTask['status'],
 ): Promise<{ task: DashboardTask; notification: Notification }> {
+  throwFault()
   await wait()
   const labels: Partial<Record<DashboardTask['status'], string>> = {
     RUNNING: '开始执行',
@@ -35,6 +56,7 @@ export async function postEvent(
 }
 
 export async function addDish(): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
+  throwFault()
   await wait()
   return {
     tasks: [

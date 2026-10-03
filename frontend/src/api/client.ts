@@ -1,3 +1,4 @@
+import { ApiError } from '../lib/errors'
 import { addDish as mockAddDish, getSchedule as mockGetSchedule, postEvent as mockPostEvent } from '../mock/api'
 import type { DashboardSchedule, DashboardTask, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
 
@@ -60,7 +61,7 @@ export class HttpCookFlowApi implements CookFlowApi {
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
     const body = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(body?.error?.message ?? `API request failed: ${response.status}`)
+    if (!response.ok) throw new ApiError(body?.error?.message ?? `API request failed: ${response.status}`, response.status, body?.error?.code)
     return body as T
   }
   async getSchedule(): Promise<DashboardSchedule> {
