@@ -94,3 +94,22 @@ def test_build_key_node_plan_matches_task_definitions_directly() -> None:
     assert {n["notification_id"] for n in notifications} == {
         n["notification_id"] for n in result["notifications"]
     }
+
+
+
+def test_pure_device_task_gets_start_and_complete_notifications() -> None:
+    scheduled = [{
+        "task_id": "steam_only", "dish_id": "dish", "start_offset_sec": 120,
+        "end_offset_sec": 600, "assigned_resources": ["steamer_1"],
+        "status": "PENDING", "locked": False, "notification_points": [],
+    }]
+    definitions = [{
+        "task_id": "steam_only", "dish_id": "dish", "action": "普通蒸 8 分钟",
+        "device_requirement": {"device_type": "steamer", "mode": "steam", "capacity_units": 1},
+        "manual_required": False, "manual_segments": [],
+    }]
+    notifications, points = build_key_node_plan(scheduled, definitions)
+    assert {point["type"] for point in points["steam_only"]} == {"start", "complete"}
+    assert {point["offset_sec"] for point in points["steam_only"]} == {120, 600}
+    assert {notification["trigger_offset_sec"] for notification in notifications} == {120, 600}
+    assert all(notification["device_id"] == "steamer_1" for notification in notifications)

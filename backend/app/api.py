@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
+from app.parser.deterministic import DeterministicParserAdapter
 from app.replan import ReplanError, replan
 from app.scheduler import schedule
 from scripts.validate_contracts import validate_schedule_request_business_rules
@@ -37,6 +39,15 @@ REQUEST_VALIDATOR = Draft202012Validator(
     registry=SCHEMA_REGISTRY,
     format_checker=FormatChecker(),
 )
+RECIPE_VALIDATOR = Draft202012Validator(
+    SCHEMAS["recipe.schema.json"],
+    registry=SCHEMA_REGISTRY,
+    format_checker=FormatChecker(),
+)
+
+
+def _recipe_parser(*, strict: bool = False) -> RecipeParser:
+    return RecipeParser(DeterministicParserAdapter(strict=strict))
 
 
 def _error_response(request_id: str, code: str, message: str, details: list[dict[str, Any]]) -> JSONResponse:
@@ -111,6 +122,39 @@ def create_app() -> FastAPI:
                 "error": {"code": "SCHEDULE_INFEASIBLE", "message": "No feasible schedule found", "details": result["validation"]["errors"]},
             })
         return result
+
+    @app.post("/recipes/parse")
+    def parse_recipe(payload: dict[str, Any], strict: bool = False) -> Any:
+        request_id = str(payload.get("recipe_id") or "unknown")
+        recipe_errors = sorted(
+            RECIPE_VALIDATOR.iter_errors(payload), key=lambda error: list(error.absolute_path)
+        )
+        if recipe_errors:
+            return _error_response(
+                request_id,
+                "INVALID_INPUT",
+                "Recipe does not satisfy V1 schema",
+                [
+                    {
+                        "code": "SCHEMA_VALIDATION_ERROR",
+                        "message": error.message,
+                        "path": ".".join(str(part) for part in error.absolute_path) or "$",
+                    }
+                    for error in recipe_errors
+                ],
+            )
+        try:
+            result = _recipe_parser(strict=strict).parse(payload)
+        except InputRecipeError as error:
+            return _error_response(request_id, "INVALID_INPUT", str(error), [])
+        except ParsedTaskError as error:
+            return _error_response(request_id, "PARSE_FAILED", str(error), [])
+        return {
+            "schema_version": "1.0",
+            "recipe_id": result.recipe_id,
+            "provider": result.provider,
+            "tasks": list(result.tasks),
+        }
 
     @app.post("/v1/replans")
     def create_replan(envelope: dict[str, Any]) -> Any:

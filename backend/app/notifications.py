@@ -78,6 +78,12 @@ def build_key_node_plan(
             # Pure manual task: the operator's whole job is the key node.
             nodes.append({"type": "start", "offset_sec": start, "action": task_action, "message": f"开始：{task_action}"})
             nodes.append({"type": "complete", "offset_sec": end, "action": task_action, "message": f"完成：{task_action}"})
+        elif requirement is not None:
+            # Pure device tasks still need an end-of-cycle reminder; otherwise
+            # unattended steaming/baking/cooling steps silently disappear from
+            # both notification surfaces.
+            nodes.append({"type": "start", "offset_sec": start, "action": task_action, "message": f"设备开始：{task_action}"})
+            nodes.append({"type": "complete", "offset_sec": end, "action": task_action, "message": f"设备完成：{task_action}，请检查并取出"})
 
         points_by_task[task_id] = [
             {"type": node["type"], "offset_sec": node["offset_sec"], "message": node["message"]} for node in nodes

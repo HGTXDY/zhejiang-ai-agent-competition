@@ -40,4 +40,24 @@ npm run build
 VITE_API_MODE=http VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-当前后端已提供 `schedule-request` → `schedule-response` 初始排程闭环；事件上报和 `replan-response` 尚未由 API 暴露，因此这些操作在 HTTP 模式下仍明确走 Mock，不代表动态重排后端已完成。
+当前后端已提供 `schedule-request` → `schedule-response` 初始排程闭环；事件上报接入 `POST /v1/replans`（`replan-response`），其余未暴露的能力在 HTTP 模式下仍走 Mock。
+
+## Execution integration
+
+The execution dashboard supports both modes:
+
+- `VITE_API_MODE=mock` (default): uses the deterministic V1 fixture and mock replan responses.
+- `VITE_API_MODE=http`: loads `public/demo/schedule-request.json`, calls `POST /v1/schedules`, and sends execution events to `POST /v1/replans`.
+- `VITE_API_BASE_URL` controls the FastAPI origin and defaults to `http://127.0.0.1:8000`.
+
+Run the real API against the dynamic-replan branch or after it is merged:
+
+```bash
+# backend
+PYTHONPATH=backend uvicorn app.api:app --reload --port 8000
+
+# frontend
+VITE_API_MODE=http VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+The UI never calculates a new schedule. It sends the current schedule and the V1 event envelope to the API, then renders the returned schedule, changes, notifications, and disruption score.
