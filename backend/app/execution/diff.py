@@ -89,25 +89,62 @@ def _orders(tasks: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     return {dish: [task_id for _, task_id in sorted(values)] for dish, values in grouped.items()}
 
 
-def build_notifications(changes: Iterable[dict[str, Any]], *, created_at: str) -> list[dict[str, Any]]:
-    """Build contract-shaped schedule update notifications for changed tasks."""
+def _relative_delta(old_start: int | None, new_start: int | None) -> str:
+    """Humanise a start-offset change as a relative-time phrase, or '' if none."""
+    if old_start is None or new_start is None or old_start == new_start:
+        return ""
+    delta = new_start - old_start
+    minutes = abs(delta) // 60
+    if minutes == 0:
+        return "提前 1 分钟以内" if delta < 0 else "推迟 1 分钟以内"
+    return f"提前 {minutes} 分钟" if delta < 0 else f"推迟 {minutes} 分钟"
+
+
+def build_notifications(
+    changes: Iterable[dict[str, Any]],
+    *,
+    created_at: str,
+    task_meta: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build contract-shaped schedule update notifications for changed tasks.
+
+    ``task_meta`` maps task_id to its request definition (for ``action`` and
+    ``dish_id``) so notifications read as an actionable instruction with a dish,
+    rather than the generic "task X changed" placeholder.
+    """
+    task_meta = task_meta or {}
     notifications = []
     for change in changes:
         kind = change["change_type"]
         if kind in {"UNCHANGED", "LOCKED"}:
             continue
+        meta = task_meta.get(change["task_id"], {})
+        action = meta.get("action") or change["task_id"]
+        dish_id = meta.get("dish_id")
+        if kind == "MOVED":
+            relative = _relative_delta(change["old_start_offset_sec"], change["new_start_offset_sec"])
+            message = f"{action}：{relative}，请按新时间执行。" if relative else f"{action}：排程时间已调整，请按新时间执行。"
+        elif kind == "RESOURCE_CHANGED":
+            resources = "、".join(change["new_resources"]) or "待分配设备"
+            message = f"{action}：改用 {resources}。"
+        elif kind == "ADDED":
+            message = f"新增任务：{action}，请留意新增步骤。"
+        elif kind == "REMOVED":
+            message = f"任务已取消：{action}。"
+        else:
+            message = f"{action} 的排程发生变化，请确认。"
         notifications.append(
             {
                 "notification_id": f"schedule-updated-{change['task_id']}",
                 "level": "warning" if kind in {"MOVED", "RESOURCE_CHANGED"} else "info",
                 "type": "schedule_updated",
                 "trigger_offset_sec": change["new_start_offset_sec"] or 0,
-                "dish_id": None,
+                "dish_id": dish_id,
                 "task_id": change["task_id"],
-                "action": "review_schedule_change",
+                "action": action,
                 "device_id": (change["new_resources"] or [None])[0],
                 "parameters": {"change_type": kind},
-                "message": f"任务 {change['task_id']} 的排程发生变化，请确认。",
+                "message": message,
                 "created_at": created_at,
             }
         )

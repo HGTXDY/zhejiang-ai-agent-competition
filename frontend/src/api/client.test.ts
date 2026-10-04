@@ -9,7 +9,7 @@ const current: DashboardSchedule = {
   request_id: 'req-1',
   schedule_id: 'sched-1',
   solver: { status: 'OPTIMAL', objective_value: 0, best_bound: 0, gap: 0, duration_ms: 1 },
-  metrics: { makespan_sec: 0, finish_spread_sec: 0, max_continuous_manual_sec: 0, device_conflicts: 0, dependency_violations: 0, target_delay_sec: 0 },
+  metrics: { makespan_sec: 0, finish_spread_sec: 0, max_continuous_manual_sec: 0, device_conflicts: 0, dependency_violations: 0, target_delay_sec: 0, serial_baseline_sec: 0, makespan_compression_ratio: 1 },
   tasks: [
     {
       task_id: 't1',

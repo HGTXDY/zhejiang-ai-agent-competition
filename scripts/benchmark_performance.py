@@ -11,9 +11,10 @@ Measures, with wall-clock timing and warmup:
    over all 100 official recipes, reporting each stage and total wall-clock.
 
 Each phase reports min / p50 / p95 / max in milliseconds and checks the
-competition Level 5 budget gates from issue #50 (initial < 5000ms, replan
-< 3000ms). Results are written to docs/evaluation/ as JSON + Markdown and are
-reproducible in CI.
+two-tier competition Level 5 budget gates from issue #50 (合格: initial
+< 10000ms, replan < 8000ms; 优秀: initial < 5000ms, replan < 3000ms).
+Results are written to docs/evaluation/ as JSON + Markdown and are reproducible
+in CI.
 
 This is an engineering regression baseline, not an official competition score.
 """
@@ -50,9 +51,17 @@ DEFAULT_FIXTURE = ROOT / "fixtures" / "v1" / "four-dish-normal.json"
 DEFAULT_RECIPES = ROOT / "data" / "official" / "recipes_100.csv"
 SCHEMA_DIR = ROOT / "contracts" / "v1" / "schemas"
 
-# Competition Level 5 budget gates (issue #50): initial < 5s, replan < 3s.
-INITIAL_BUDGET_MS = 5000
-REPLAN_BUDGET_MS = 3000
+# Competition Level 5 budget gates (issue #50) are two-tier. 合格 is the
+# must-pass bar and 优秀 the stretch goal:
+#   初始排程  合格 < 10000ms，优秀 < 5000ms
+#   动态重排  合格 <  8000ms，优秀 < 3000ms
+# CI's --fail-on-budget hard-gates on 合格 (issue #50 验收: 达到合格线，争取优秀线);
+# 优秀 is reported but not enforced, because the DISH_ADDED replan (adding a
+# brand-new 30-minute dish) clears 合格 but not 优秀 on shared CI hardware.
+INITIAL_QUALIFIED_MS = 10000
+INITIAL_EXCELLENT_MS = 5000
+REPLAN_QUALIFIED_MS = 8000
+REPLAN_EXCELLENT_MS = 3000
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -136,8 +145,10 @@ def measure_initial(fixture: Path, iterations: int, warmup: int) -> dict[str, An
         "warmup": warmup,
         "solver_statuses": sorted(set(statuses)),
         "wall_clock_ms": summarize(samples),
-        "budget_ms": INITIAL_BUDGET_MS,
-        "within_budget": percentile(samples, 0.95) < INITIAL_BUDGET_MS,
+        "budget_ms": INITIAL_QUALIFIED_MS,
+        "excellent_ms": INITIAL_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < INITIAL_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < INITIAL_EXCELLENT_MS,
     }
 
 
@@ -170,8 +181,99 @@ def measure_replan(fixture: Path, iterations: int, warmup: int) -> dict[str, Any
         "iterations": iterations,
         "warmup": warmup,
         "wall_clock_ms": summarize(samples),
-        "budget_ms": REPLAN_BUDGET_MS,
-        "within_budget": percentile(samples, 0.95) < REPLAN_BUDGET_MS,
+        "budget_ms": REPLAN_QUALIFIED_MS,
+        "excellent_ms": REPLAN_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < REPLAN_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < REPLAN_EXCELLENT_MS,
+    }
+
+
+def _dish_added_tasks() -> list[dict[str, Any]]:
+    """A two-step 排骨汤 dish whose tasks are compatible with the four-dish fixture."""
+    field_status = {
+        "duration_sec": "provided",
+        "device_type": "provided",
+        "device_mode": "provided",
+        "temperature_c": "provided",
+        "manual_duration_sec": "provided",
+    }
+    return [
+        {
+            "schema_version": "1.0",
+            "task_id": "soup_prepare",
+            "dish_id": "pork_rib_soup",
+            "action": "排骨洗净并准备炖汤料",
+            "resource_type": "manual",
+            "duration_sec": 240,
+            "manual_segments": [],
+            "predecessors": [],
+            "interruptible": False,
+            "confidence": 1.0,
+            "source_step_index": 0,
+            "manual_required": True,
+            "manual_duration_sec": 240,
+            "field_status": {**field_status, "device_type": "not_applicable", "device_mode": "not_applicable", "temperature_c": "not_applicable"},
+        },
+        {
+            "schema_version": "1.0",
+            "task_id": "soup_simmer",
+            "dish_id": "pork_rib_soup",
+            "action": "排骨汤小火慢炖",
+            "resource_type": "hybrid",
+            "device_requirement": {
+                "device_type": "stove",
+                "mode": "low_heat",
+                "temperature_c": 95,
+                "capacity_units": 1,
+            },
+            "duration_sec": 1800,
+            "manual_segments": [
+                {"offset_sec": 0, "duration_sec": 30, "action": "将排骨和汤料放入锅中"},
+                {"offset_sec": 1770, "duration_sec": 30, "action": "出锅装汤"},
+            ],
+            "predecessors": ["soup_prepare"],
+            "interruptible": False,
+            "confidence": 1.0,
+            "source_step_index": 1,
+            "manual_required": True,
+            "manual_duration_sec": 60,
+            "field_status": field_status,
+        },
+    ]
+
+
+def measure_replan_dish_added(fixture: Path, iterations: int, warmup: int) -> dict[str, Any]:
+    request = json.loads(fixture.read_text(encoding="utf-8"))
+    previous = schedule(request)
+    previous["tasks"][0]["status"] = "RUNNING"
+    envelope = {
+        "event": {
+            "schema_version": "1.0",
+            "event_id": "bench-add-1",
+            "schedule_id": previous["schedule_id"],
+            "event_type": "DISH_ADDED",
+            "occurred_at": "2026-09-27T12:00:00Z",
+            "payload": {"tasks": _dish_added_tasks()},
+        },
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    for _ in range(warmup):
+        replan(envelope)
+    samples: list[float] = []
+    for _ in range(iterations):
+        started = time.perf_counter()
+        replan(envelope)
+        samples.append((time.perf_counter() - started) * 1000)
+    return {
+        "scenario": "DISH_ADDED",
+        "iterations": iterations,
+        "warmup": warmup,
+        "wall_clock_ms": summarize(samples),
+        "budget_ms": REPLAN_QUALIFIED_MS,
+        "excellent_ms": REPLAN_EXCELLENT_MS,
+        "within_budget": percentile(samples, 0.95) < REPLAN_QUALIFIED_MS,
+        "within_excellent": percentile(samples, 0.95) < REPLAN_EXCELLENT_MS,
     }
 
 
@@ -252,8 +354,25 @@ def measure_end_to_end(payloads: list[dict[str, Any]], iterations: int, warmup: 
     }
 
 
+def _render_replan_added(added: dict[str, Any]) -> str:
+    added_t = added["wall_clock_ms"]
+    excellent = "优秀" if added["within_excellent"] else "未达优秀"
+    return f"""合格线 `{added['budget_ms']}` ms，结果 `{'通过' if added['within_budget'] else '超预算'}`；优秀线 `{added['excellent_ms']}` ms（{excellent}）。
+
+| 指标 | 数值（毫秒） |
+|---|---:|
+| min | {added_t['min']} |
+| p50 | {added_t['p50']} |
+| p95 | {added_t['p95']} |
+| max | {added_t['max']} |
+
+预热 {added['warmup']} 次、测量 {added['iterations']} 次。
+"""
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     initial, replan_report, end_to_end = report["initial"], report["replan"], report["end_to_end"]
+    replan_added = report.get("replan_dish_added")
     init_t = initial["wall_clock_ms"]
     replan_t = replan_report["wall_clock_ms"]
     e2e = end_to_end
@@ -273,7 +392,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 ## 1. 初始排程耗时（四道菜 fixture，多目标分层 CP-SAT）
 
-合格线 `{initial['budget_ms']}` ms，结果 `{'通过' if initial['within_budget'] else '超预算'}`。
+合格线 `{initial['budget_ms']}` ms，结果 `{'通过' if initial['within_budget'] else '超预算'}`；优秀线 `{initial['excellent_ms']}` ms（{'优秀' if initial['within_excellent'] else '未达优秀'}）。
 
 | 指标 | 数值（毫秒） |
 |---|---:|
@@ -286,7 +405,7 @@ Solver 状态：`{', '.join(initial['solver_statuses'])}`；预热 {initial['war
 
 ## 2. 动态重排耗时（TASK_COMPLETED 事件）
 
-合格线 `{replan_report['budget_ms']}` ms，结果 `{'通过' if replan_report['within_budget'] else '超预算'}`。
+合格线 `{replan_report['budget_ms']}` ms，结果 `{'通过' if replan_report['within_budget'] else '超预算'}`；优秀线 `{replan_report['excellent_ms']}` ms（{'优秀' if replan_report['within_excellent'] else '未达优秀'}）。
 
 | 指标 | 数值（毫秒） |
 |---|---:|
@@ -297,6 +416,9 @@ Solver 状态：`{', '.join(initial['solver_statuses'])}`；预热 {initial['war
 
 预热 {replan_report['warmup']} 次、测量 {replan_report['iterations']} 次。
 
+{"## 2b. 动态重排耗时（DISH_ADDED 临时加菜事件）" if replan_added else ""}
+
+{_render_replan_added(replan_added) if replan_added else ""}
 ## 3. 端到端耗时（解析 → Schema/业务校验 → 求解 → 通知，100 道官方菜谱）
 
 单道菜谱耗时分布（毫秒）：
@@ -347,6 +469,7 @@ def main() -> int:
 
     initial = measure_initial(fixture, args.initial_iterations, args.initial_warmup)
     replan_report = measure_replan(fixture, args.replan_iterations, args.replan_warmup)
+    replan_added = measure_replan_dish_added(fixture, args.replan_iterations, args.replan_warmup)
     end_to_end = measure_end_to_end(payloads, args.e2e_iterations, args.e2e_warmup)
 
     report = {
@@ -356,6 +479,7 @@ def main() -> int:
         "platform": platform.platform(),
         "initial": initial,
         "replan": replan_report,
+        "replan_dish_added": replan_added,
         "end_to_end": end_to_end,
     }
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -364,7 +488,11 @@ def main() -> int:
     args.markdown_out.write_text(render_markdown(report), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
-    if args.fail_on_budget and not (initial["within_budget"] and replan_report["within_budget"]):
+    if args.fail_on_budget and not (
+        initial["within_budget"]
+        and replan_report["within_budget"]
+        and replan_added["within_budget"]
+    ):
         return 2
     return 0
 

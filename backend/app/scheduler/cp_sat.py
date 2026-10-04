@@ -20,7 +20,12 @@ from typing import Any
 
 from ortools.sat.python import cp_model
 
-from app.metrics import finish_spread_sec, max_continuous_manual_sec
+from app.metrics import (
+    finish_spread_sec,
+    makespan_compression_ratio,
+    max_continuous_manual_sec,
+    serial_baseline_makespan_sec,
+)
 from app.notifications import build_key_node_plan
 
 
@@ -54,6 +59,24 @@ def _compatible_devices(task: dict[str, Any], devices: list[dict[str, Any]]) -> 
             continue
         result.append(device)
     return result
+
+
+def _settings_conflict(req_a: dict[str, Any] | None, req_b: dict[str, Any] | None) -> bool:
+    """True when two device requirements cannot share a steamer/oven at once.
+
+    Matching the validator, a conflict only exists when both tasks specify a
+    mode (and they differ) or both specify a temperature (and they differ).
+    A task that omits the mode or temperature never conflicts on that axis.
+    """
+    if req_a is None or req_b is None:
+        return False
+    mode_a, mode_b = req_a.get("mode"), req_b.get("mode")
+    if mode_a is not None and mode_b is not None and mode_a != mode_b:
+        return True
+    temp_a, temp_b = req_a.get("temperature_c"), req_b.get("temperature_c")
+    if temp_a is not None and temp_b is not None and temp_a != temp_b:
+        return True
+    return False
 
 
 def _status_name(status: int) -> str:
@@ -163,7 +186,7 @@ def _error_response(
         "request_id": request["request_id"],
         "schedule_id": f"{request['request_id']}_schedule",
         "solver": {"status": status, "objective_value": None, "best_bound": None, "gap": None, "duration_ms": elapsed_ms},
-        "metrics": {"makespan_sec": 0, "finish_spread_sec": 0, "max_continuous_manual_sec": 0, "device_conflicts": 0, "dependency_violations": 0, "target_delay_sec": 0},
+        "metrics": {"makespan_sec": 0, "finish_spread_sec": 0, "max_continuous_manual_sec": 0, "device_conflicts": 0, "dependency_violations": 0, "target_delay_sec": 0, "serial_baseline_sec": 0, "makespan_compression_ratio": 1.0},
         "tasks": [],
         "validation": {"valid": False, "errors": [{"code": code, "message": message, "path": None}]},
         "timings_ms": {"parse": 0, "validation": 0, "solve": elapsed_ms, "notification": 0, "total": elapsed_ms},
@@ -269,6 +292,38 @@ def schedule(
             )
             operator_intervals.append((manual_interval, 1))
             manual_segments.append((manual_start, segment["duration_sec"], manual_end))
+
+    # Steamer/oven settings mutex: the V1 contract forbids overlapping tasks
+    # that require different modes or temperatures on the same device, even
+    # when the device has spare capacity (capacity_units >= 2). The independent
+    # validator checks the same rule, so modelling it here keeps the solver from
+    # ever producing a conflict the post-hoc check would reject.
+    for device in devices:
+        if device["device_type"] not in {"steamer", "oven"}:
+            continue
+        device_id = device["device_id"]
+        refs: list[tuple[str, dict[str, Any] | None, Any]] = []
+        for task in tasks:
+            task_id = task["task_id"]
+            if task_id not in device_choices:
+                continue
+            for candidate, selected in device_choices[task_id]:
+                if candidate["device_id"] == device_id:
+                    refs.append((task_id, task.get("device_requirement"), selected))
+                    break
+        for i in range(len(refs)):
+            task_a, req_a, sel_a = refs[i]
+            for j in range(i + 1, len(refs)):
+                task_b, req_b, sel_b = refs[j]
+                if not _settings_conflict(req_a, req_b):
+                    continue
+                both = model.NewBoolVar(f"settings_both_{device_id}_{task_a}_{task_b}")
+                model.Add(both <= sel_a)
+                model.Add(both <= sel_b)
+                model.Add(both >= sel_a + sel_b - 1)
+                order = model.NewBoolVar(f"settings_order_{device_id}_{task_a}_{task_b}")
+                model.Add(ends[task_a] <= starts[task_b]).OnlyEnforceIf([order, both])
+                model.Add(ends[task_b] <= starts[task_a]).OnlyEnforceIf([order.Not(), both])
 
     for device_id, resource_intervals in device_intervals.items():
         device = next(item for item in devices if item["device_id"] == device_id)
@@ -396,6 +451,7 @@ def schedule(
     )
     objective_value = final_solver.Value(makespan)
     gap = max(0.0, objective_value - makespan_bound) if makespan_bound is not None else None
+    serial_baseline = serial_baseline_makespan_sec(tasks)
 
     notification_ms = 0
     notifications: list[dict[str, Any]] = []
@@ -427,6 +483,8 @@ def schedule(
             "device_conflicts": 0,
             "dependency_violations": 0,
             "target_delay_sec": 0,
+            "serial_baseline_sec": serial_baseline,
+            "makespan_compression_ratio": makespan_compression_ratio(objective_value, serial_baseline),
         },
         "tasks": scheduled_tasks,
         "validation": {"valid": True, "errors": []},

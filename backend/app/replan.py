@@ -12,6 +12,7 @@ from referencing import Registry, Resource
 
 from app.execution import ExecutionStateMachine, EventError, build_notifications, compare_schedules
 from app.scheduler import schedule
+from app.validation import annotate_schedule_result
 from scripts.validate_contracts import validate_schedule_request_business_rules
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,7 +129,7 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     locked_tasks = {
         task_id: task
         for task_id, task in current_tasks.items()
-        if task.get("locked") or task.get("status") in {"LOCKED", "COMPLETED"}
+        if task.get("locked") or task.get("status") in {"LOCKED", "RUNNING", "COMPLETED"}
     }
     start_floors: dict[str, int] = {}
     if event["event_type"] == "TASK_DELAYED":
@@ -148,9 +149,15 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
         if state:
             task["status"] = state.get("status", task["status"])
             task["locked"] = bool(state.get("locked", task["locked"]))
+    annotate_schedule_result(request, candidate)
     candidate["schedule_id"] = f"{previous['schedule_id']}:replan:{event['event_id']}"
     changes, metrics = compare_schedules(previous.get("tasks", []), candidate["tasks"], notified_task_ids=set(result.affected_task_ids))
-    notifications = build_notifications(changes, created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+    task_meta = {task["task_id"]: task for task in request.get("tasks", [])}
+    notifications = build_notifications(
+        changes,
+        created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        task_meta=task_meta,
+    )
     candidate["notifications"] = [
         *(candidate.get("notifications") or []),
         *notifications,

@@ -29,6 +29,18 @@ def serial_baseline_makespan_sec(tasks: Iterable[dict[str, Any]]) -> int:
     return sum(task["duration_sec"] for task in tasks)
 
 
+def makespan_compression_ratio(makespan_sec: int, serial_baseline_sec: int) -> float:
+    """Return makespan as a fraction of the sequential baseline (lower is better).
+
+    ``1.0`` means no parallelisation; ``0.5`` means the schedule halves the time
+    that executing every task back-to-back would take. A zero or negative
+    baseline (no work) yields ``1.0`` so the metric stays defined.
+    """
+    if serial_baseline_sec <= 0:
+        return 1.0
+    return round(makespan_sec / serial_baseline_sec, 4)
+
+
 def max_continuous_manual_sec(
     scheduled_tasks: Iterable[dict[str, Any]],
     task_definitions: Iterable[dict[str, Any]],

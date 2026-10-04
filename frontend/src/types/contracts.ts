@@ -21,7 +21,7 @@ export interface DashboardTask extends ScheduleTask {
 }
 export interface NotificationPoint { type: 'start' | 'prepare' | 'manual' | 'complete' | 'exception'; offset_sec: number; message: string }
 export interface Solver { status: SolverStatus; objective_value: number | null; best_bound: number | null; gap: number | null; duration_ms: number }
-export interface ScheduleMetrics { makespan_sec: number; finish_spread_sec: number; max_continuous_manual_sec: number; device_conflicts: number; dependency_violations: number; target_delay_sec: number }
+export interface ScheduleMetrics { makespan_sec: number; finish_spread_sec: number; max_continuous_manual_sec: number; device_conflicts: number; dependency_violations: number; target_delay_sec: number; serial_baseline_sec: number; makespan_compression_ratio: number }
 export interface ValidationError { code: string; message: string; path?: string | null }
 export interface ScheduleResponse {
   schema_version: '1.0'
