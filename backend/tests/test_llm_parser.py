@@ -140,3 +140,94 @@ def test_llm_adapter_output_passes_full_v1_validation():
     result = _parse(reply)
     assert result.provider == "llm"
     assert all(task["schema_version"] == "1.0" for task in result.tasks)
+
+
+def _schedule_parsed_tasks(tasks):
+    from app.parser import default_device_config
+    from app.scheduler import schedule
+
+    return schedule(
+        {
+            "schema_version": "1.0",
+            "request_id": "llm_parse_schedule_regression",
+            "tasks": list(tasks),
+            "device_config": default_device_config(),
+        }
+    )
+
+
+def test_llm_added_device_gets_capacity_and_schedules_directly():
+    reply = json.dumps(
+        [
+            {
+                "source_step_index": 0,
+                "device_type": "steamer",
+                "mode": "normal_steam",
+                "temperature_c": 100,
+                "duration_sec": 600,
+                "manual_required": False,
+                "manual_duration_sec": 0,
+                "manual_segments": [],
+                "predecessors": [],
+            }
+        ]
+    )
+    result = _parse(reply, steps=["放入设备中处理十分钟。"])
+    task = result.tasks[0]
+
+    assert task["device_requirement"] == {
+        "device_type": "steamer",
+        "mode": "normal_steam",
+        "temperature_c": 100,
+        "capacity_units": 1,
+    }
+    assert _schedule_parsed_tasks(result.tasks)["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
+
+
+def test_llm_shorter_duration_reconciles_inherited_manual_segments():
+    reply = json.dumps(
+        [
+            {
+                "source_step_index": 0,
+                "duration_sec": 300,
+                "predecessors": [],
+            }
+        ]
+    )
+    result = _parse(
+        reply,
+        steps=["放入蒸箱，普通蒸100度8分钟后取出装盘。"],
+    )
+    task = result.tasks[0]
+
+    assert task["duration_sec"] == 300
+    assert all(
+        segment["offset_sec"] + segment["duration_sec"] <= task["duration_sec"]
+        for segment in task["manual_segments"]
+    )
+    assert _schedule_parsed_tasks(result.tasks)["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
+
+
+def test_llm_manual_false_clears_inherited_manual_fields_and_schedules():
+    reply = json.dumps(
+        [
+            {
+                "source_step_index": 0,
+                "manual_required": False,
+                "manual_duration_sec": 0,
+                "manual_segments": [],
+                "predecessors": [],
+            }
+        ]
+    )
+    result = _parse(
+        reply,
+        steps=["放入蒸箱，普通蒸100度8分钟后取出装盘。"],
+    )
+    task = result.tasks[0]
+
+    assert task["manual_required"] is False
+    assert task["manual_duration_sec"] == 0
+    assert task["manual_segments"] == []
+    assert task["resource_type"] == "device"
+    assert _schedule_parsed_tasks(result.tasks)["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}

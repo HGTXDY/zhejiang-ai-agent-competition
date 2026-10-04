@@ -222,6 +222,10 @@ class LLMParserAdapter:
         if device_type in DEVICE_TYPES:
             requirement = dict(baseline.get("device_requirement") or {})
             requirement["device_type"] = device_type
+            # A device inferred only by the LLM has no deterministic
+            # requirement to inherit. Keep the merged object schema-valid and
+            # schedulable by using the V1 single-capacity default.
+            requirement.setdefault("capacity_units", 1)
             field_status["device_type"] = "provided"
             task["device_requirement"] = requirement
 
@@ -243,18 +247,50 @@ class LLMParserAdapter:
             task["duration_sec"] = duration
             field_status["duration_sec"] = "provided"
 
-        if isinstance(llm.get("manual_required"), bool):
+        manual_required_supplied = isinstance(llm.get("manual_required"), bool)
+        if manual_required_supplied:
             task["manual_required"] = llm["manual_required"]
-        manual_duration = _coerce_duration(llm.get("manual_duration_sec"))
+
+        raw_manual_duration = _as_int(llm.get("manual_duration_sec"))
+        manual_duration = _coerce_duration(raw_manual_duration)
         if manual_duration is not None:
-            task["manual_duration_sec"] = manual_duration
+            task["manual_duration_sec"] = min(manual_duration, task["duration_sec"])
             field_status["manual_duration_sec"] = "provided"
 
-        segments = llm.get("manual_segments")
-        if isinstance(segments, list) and segments:
-            coerced = _coerce_segments(segments, task["duration_sec"])
-            if coerced:
-                task["manual_segments"] = coerced
+        segments_supplied = isinstance(llm.get("manual_segments"), list)
+        if segments_supplied:
+            task["manual_segments"] = _coerce_segments(
+                llm["manual_segments"], task["duration_sec"]
+            )
+        elif duration is not None:
+            # A shorter LLM duration can invalidate deterministic end-of-task
+            # operator segments. Reconcile inherited segments against the new
+            # task boundary instead of leaking an invalid task downstream.
+            task["manual_segments"] = _coerce_segments(
+                task.get("manual_segments", []), task["duration_sec"]
+            )
+
+        if not task["manual_required"]:
+            # `manual_required=false` is authoritative even when the baseline
+            # contained manual work. Zero and clear all associated fields.
+            task["manual_duration_sec"] = 0
+            task["manual_segments"] = []
+            if manual_required_supplied or raw_manual_duration == 0:
+                field_status["manual_duration_sec"] = "provided"
+        else:
+            # Keep the business invariant required by the scheduler. This also
+            # handles an LLM changing a pure-device baseline to manual work
+            # without supplying a duration.
+            if task.get("manual_duration_sec", 0) <= 0:
+                segment_total = sum(
+                    segment["duration_sec"] for segment in task.get("manual_segments", [])
+                )
+                task["manual_duration_sec"] = segment_total or min(30, task["duration_sec"])
+                field_status["manual_duration_sec"] = "inferred"
+            else:
+                task["manual_duration_sec"] = min(
+                    task["manual_duration_sec"], task["duration_sec"]
+                )
 
         if isinstance(llm.get("confidence"), (int, float)):
             value = llm["confidence"]
@@ -319,7 +355,7 @@ def _coerce_segments(segments: list[Any], duration_sec: int) -> list[dict[str, A
         offset = _as_int(segment.get("offset_sec"))
         length = _as_int(segment.get("duration_sec"))
         action = segment.get("action")
-        if offset is None or length is None or length <= 0:
+        if offset is None or offset < 0 or length is None or length <= 0:
             continue
         if offset + length > duration_sec:
             continue
