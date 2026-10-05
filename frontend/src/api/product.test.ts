@@ -1,0 +1,90 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ProductApi, ProductApiError, buildDeviceConfig } from './product'
+import type { ParseResult } from './product'
+import requestExample from '../../../contracts/v1/examples/schedule-request-v1.json'
+import responseExample from '../../../contracts/v1/examples/schedule-response-v1.json'
+
+const kitchen = { target_time: '12:30', operator_count: 2, stove_count: 2, steamer_count: 1, oven_count: 0 }
+const ids = ['r1', 'r2', 'r3']
+const parsed: ParseResult[] = ids.map(recipe_id => ({ schema_version: '1.0', recipe_id, provider: 'deterministic', tasks: [{ ...requestExample.tasks[0], task_id: `${recipe_id}_t`, dish_id: recipe_id, predecessors: [] }] } as ParseResult))
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+describe('product API', () => {
+  it('maps official catalog summaries without invented recipe steps', async () => {
+    const fetcher = vi.fn().mockResolvedValue(json({ recipes: [{ recipe_id: 'r1', name: '鱼', step_count: 4, ingredient_count: 2 }] }))
+    vi.stubGlobal('fetch', fetcher)
+    expect((await new ProductApi('http://api/').listRecipes())[0]).toMatchObject({ preview: '2 种食材', step_count: 4 })
+    expect(fetcher.mock.calls[0][0]).toBe('http://api/recipes')
+  })
+  it('loads detail before parsing and forwards the complete recipe', async () => {
+    const recipe = { schema_version: '1.0', recipe_id: 'r/a', name: '鱼', ingredients: ['鱼'], steps_text: ['蒸10分钟'], source: 'official' }
+    const fetcher = vi.fn().mockResolvedValueOnce(json(recipe)).mockResolvedValueOnce(json(parsed[0]))
+    vi.stubGlobal('fetch', fetcher)
+    const api = new ProductApi('http://api')
+    await api.parseRecipe(await api.getRecipe('r/a'))
+    expect(fetcher.mock.calls[0][0]).toBe('http://api/recipes/r%2Fa')
+    expect(fetcher.mock.calls[1][0]).toBe('http://api/recipes/parse')
+    expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual(recipe)
+  })
+  it('keeps each recipe task graph when parsing a selection', async () => {
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => url.endsWith('/parse')
+      ? json(parsed.find(result => result.recipe_id === JSON.parse(String(init?.body)).recipe_id))
+      : json({ recipe_id: url.substring(url.lastIndexOf('/') + 1) }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(await new ProductApi('http://api').parseSelection(ids)).toEqual(parsed)
+    expect(fetcher).toHaveBeenCalledTimes(6)
+  })
+  it('validates device_config then sends a V1 request, preserving task provenance', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(json({ valid: true, errors: [] })).mockResolvedValueOnce(json(responseExample))
+    vi.stubGlobal('fetch', fetcher)
+    const result = await new ProductApi('http://api').createSchedule(ids, kitchen, parsed)
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual(['http://api/devices/validate', 'http://api/schedules'])
+    const body = JSON.parse(fetcher.mock.calls[1][1].body)
+    expect(Object.keys(body).sort()).toEqual(['device_config', 'request_id', 'schema_version', 'tasks'])
+    expect(body.tasks).toEqual(parsed.flatMap(result => result.tasks))
+    expect(body).not.toHaveProperty('recipe_ids')
+    expect(body.device_config).not.toHaveProperty('stove_count')
+    expect(result.schedule.schedule_id).toBe(responseExample.schedule_id)
+  })
+  it('blocks schedules when device validation returns HTTP 200 with valid=false', async () => {
+    const fetcher = vi.fn().mockResolvedValue(json({ valid: false, errors: [{ code: 'INVALID_INPUT', message: 'bad device' }] }))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(new ProductApi().createSchedule(ids, kitchen, parsed)).rejects.toThrow('厨房设备配置未通过校验')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+  it.each([422, 409, 504])('preserves structured HTTP %i errors without mock fallback', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { code: 'BACKEND_CODE', message: 'backend message', details: [{ code: 'DETAIL', message: 'detail', path: 'tasks' }] } }, status)))
+    await expect(new ProductApi().listRecipes()).rejects.toMatchObject({ status, code: 'BACKEND_CODE', details: [{ code: 'DETAIL', message: 'detail', path: 'tasks' }] })
+  })
+  it('reports offline and invalid JSON failures', async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(new Response('html', { status: 502 }))
+    vi.stubGlobal('fetch', fetcher)
+    const api = new ProductApi()
+    await expect(api.listRecipes()).rejects.toThrow('offline')
+    await expect(api.listRecipes()).rejects.toBeInstanceOf(ProductApiError)
+  })
+  it('blocks stale parsing, missing fields and invalid selection before any request', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher)
+    const api = new ProductApi()
+    await expect(api.createSchedule(ids, kitchen, parsed.slice(1))).rejects.toThrow('重新解析')
+    await expect(api.parseSelection(['r1', 'r1', 'r2'])).rejects.toThrow('不同的菜')
+    const missing = structuredClone(parsed); missing[0].tasks[0].field_status = { duration_sec: 'missing' }
+    await expect(api.createSchedule(ids, kitchen, missing)).rejects.toThrow('缺失字段')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})
+
+describe('device configuration', () => {
+  it('creates independent burners and an absolute timezone-bearing target', () => {
+    const now = new Date(2026, 9, 4, 13, 0)
+    const config = buildDeviceConfig(kitchen, now)
+    expect(config.devices.map(device => device.device_id)).toEqual(['stove_1', 'stove_2', 'steamer_1'])
+    const target = new Date(config.target_ready_at)
+    expect(target.getDate()).toBe(5); expect(target.getHours()).toBe(12); expect(target.getMinutes()).toBe(30)
+    expect(config.target_ready_at).toMatch(/Z$/)
+  })
+  it.each([{ stove_count: -1 }, { steamer_count: 1.5 }, { operator_count: 0 }, { target_time: '25:00' }])('rejects invalid input %o', change => {
+    expect(() => buildDeviceConfig({ ...kitchen, ...change })).toThrow()
+  })
+})

@@ -14,6 +14,10 @@ export interface KitchenConfig {
   stove_count: number
   steamer_count: number
   oven_count: number
+  refrigerator_count?: number
+  dishwasher_count?: number
+  range_hood_count?: number
+  water_purifier_count?: number
 }
 
 export interface RecipeValidation {

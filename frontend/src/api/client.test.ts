@@ -67,3 +67,19 @@ describe('toReplanEnvelope', () => {
     expect(current).toEqual(snapshot)
   })
 })
+
+describe('real initial request context', () => {
+  it('rejects missing or mismatched context instead of requesting Demo data', async () => {
+    const { HttpCookFlowApi } = await import('./client')
+    const { vi } = await import('vitest')
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const api = new HttpCookFlowApi('http://api')
+      await expect(api.postEvent({ ...current.tasks[0], status: 'RUNNING' }, 'DELAYED', current)).rejects.toThrow('缺少初始排程请求')
+      api.setScheduleRequest({ ...scheduleRequest, request_id: 'other_request' })
+      await expect(api.postEvent({ ...current.tasks[0], status: 'RUNNING' }, 'DELAYED', current)).rejects.toThrow('上下文不匹配')
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+})

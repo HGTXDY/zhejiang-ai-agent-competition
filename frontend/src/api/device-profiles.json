@@ -1,0 +1,85 @@
+{
+  "stove": {
+    "modes": [
+      "boil",
+      "high_heat",
+      "medium_heat",
+      "low_heat",
+      "pan_fry",
+      "deep_fry",
+      "stew",
+      "stir_fry",
+      "simmer"
+    ],
+    "capacity_units": 1,
+    "temperature_min_c": 60,
+    "temperature_max_c": 250
+  },
+  "steamer": {
+    "modes": [
+      "gentle_steam",
+      "defat_steam",
+      "multi_layer_steam",
+      "normal_steam"
+    ],
+    "capacity_units": 2,
+    "temperature_min_c": 30,
+    "temperature_max_c": 120
+  },
+  "oven": {
+    "modes": [
+      "air_fry",
+      "upper_lower_heat",
+      "full_grill",
+      "convection",
+      "top_heat",
+      "humid_bake",
+      "circulating",
+      "defat_roast",
+      "dehydrate",
+      "proof",
+      "bake"
+    ],
+    "capacity_units": 2,
+    "temperature_min_c": 30,
+    "temperature_max_c": 250
+  },
+  "refrigerator": {
+    "modes": [
+      "thaw",
+      "freeze",
+      "chill"
+    ],
+    "capacity_units": 3,
+    "temperature_min_c": -24,
+    "temperature_max_c": 10
+  },
+  "dishwasher": {
+    "modes": [
+      "baby_care",
+      "deep_clean",
+      "daily"
+    ],
+    "capacity_units": 1,
+    "temperature_min_c": null,
+    "temperature_max_c": null
+  },
+  "range_hood": {
+    "modes": [
+      "high",
+      "low"
+    ],
+    "capacity_units": 1,
+    "temperature_min_c": null,
+    "temperature_max_c": null
+  },
+  "water_purifier": {
+    "modes": [
+      "coffee",
+      "instant_heat"
+    ],
+    "capacity_units": 1,
+    "temperature_min_c": 0,
+    "temperature_max_c": 98
+  }
+}

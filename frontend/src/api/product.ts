@@ -1,0 +1,95 @@
+import profiles from './device-profiles.json'
+import type { DashboardSchedule, ScheduleResponse, ValidationError } from '../types/contracts'
+import type { KitchenConfig, RecipeSummary } from '../types/product'
+
+export interface Recipe {
+  schema_version: '1.0'; recipe_id: string; name: string; ingredients: string[]; steps_text: string[]; source?: string
+}
+export interface ParsedTask {
+  schema_version: '1.0'; task_id: string; dish_id: string; action: string; duration_sec: number
+  resource_type: 'manual' | 'device' | 'hybrid' | 'wait'
+  predecessors: string[]; interruptible: boolean; manual_required: boolean; manual_duration_sec: number
+  manual_segments: { offset_sec: number; duration_sec: number; action: string }[]
+  device_requirement?: { device_type: string; mode?: string | null; temperature_c?: number | null; capacity_units: number }
+  confidence?: number | null; field_status?: Record<string, string>
+}
+export interface ParseResult { schema_version: '1.0'; recipe_id: string; provider: string; tasks: ParsedTask[] }
+export interface DeviceConfig {
+  schema_version: '1.0'; operator_count: number; target_ready_at: string
+  devices: { device_id: string; device_type: string; capacity_units: number; capabilities: { modes: string[]; temperature_min_c: number | null; temperature_max_c: number | null }; available: boolean }[]
+}
+export interface InitialRequest { schema_version: '1.0'; request_id: string; tasks: ParsedTask[]; device_config: DeviceConfig }
+export class ProductApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string, readonly details: ValidationError[] = []) { super(message) }
+}
+
+// Demo presets copied from the current Parser default_device_config, not from selected tasks.
+// device-profiles.test.ts checks every Parser mode and the canonical bounds/capacity.
+export function buildDeviceConfig(kitchen: KitchenConfig, now = new Date()): DeviceConfig {
+  if (!/^\d{2}:\d{2}$/.test(kitchen.target_time)) throw new Error('请填写有效的目标开饭时间')
+  const [hour, minute] = kitchen.target_time.split(':').map(Number)
+  if (hour > 23 || minute > 59) throw new Error('请填写有效的目标开饭时间')
+  const target = new Date(now); target.setHours(hour, minute, 0, 0)
+  if (target <= now) target.setDate(target.getDate() + 1)
+  if (!Number.isInteger(kitchen.operator_count) || kitchen.operator_count < 1 || kitchen.operator_count > 20) throw new Error('操作员数量应为 1～20 的整数')
+  const devices = (Object.keys(profiles) as (keyof typeof profiles)[]).flatMap(type => {
+    const count = kitchen[`${type}_count`] ?? 0
+    if (!Number.isInteger(count) || count < 0 || count > (type === 'stove' ? 8 : 4)) throw new Error('设备数量超出范围或不是整数')
+    return Array.from({ length: count }, (_, i) => ({ device_id: `${type}_${i + 1}`, device_type: type, capacity_units: profiles[type].capacity_units, capabilities: { modes: [...profiles[type].modes], temperature_min_c: profiles[type].temperature_min_c, temperature_max_c: profiles[type].temperature_max_c }, available: true }))
+  })
+  return { schema_version: '1.0', operator_count: kitchen.operator_count, target_ready_at: target.toISOString(), devices }
+}
+export function assertSelection(ids: string[]) {
+  if (ids.length < 3 || ids.length > 5 || new Set(ids).size !== ids.length) throw new Error('请选择 3～5 道不同的菜')
+}
+export function toDashboard(response: ScheduleResponse, tasks: ParsedTask[]): DashboardSchedule {
+  const actions = new Map(tasks.map(task => [task.task_id, task.action]))
+  const tones = ['gold', 'cyan', 'violet', 'slate'] as const
+  return { ...response, tasks: response.tasks.map(task => ({ ...task, action: actions.get(task.task_id) ?? task.task_id })),
+    resources: [...new Set(response.tasks.flatMap(task => task.assigned_resources))].map((id, i) => ({ id, label: id, tone: tones[i % tones.length] })) }
+}
+export class ProductApi {
+  constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
+  private async request<T>(path: string, payload?: unknown): Promise<T> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 70000)
+    try {
+      const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
+        signal: controller.signal, ...(payload === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+      })
+      const body = await response.json().catch(() => { throw new ProductApiError('后端返回了无效 JSON', response.status, 'INVALID_RESPONSE') })
+      if (!response.ok) throw new ProductApiError(body.error?.message ?? `请求失败（${response.status}）`, response.status, body.error?.code ?? 'HTTP_ERROR', body.error?.details ?? [])
+      return body as T
+    } finally { clearTimeout(timeout) }
+  }
+  async listRecipes(): Promise<RecipeSummary[]> {
+    const result = await this.request<{ recipes: { recipe_id: string; name: string; step_count: number; ingredient_count: number }[] }>('/recipes')
+    return result.recipes.map(recipe => ({ ...recipe, preview: `${recipe.ingredient_count} 种食材`, tags: ['官方菜谱'] }))
+  }
+  getRecipe(id: string) { return this.request<Recipe>(`/recipes/${encodeURIComponent(id)}`) }
+  parseRecipe(recipe: Recipe) { return this.request<ParseResult>('/recipes/parse', recipe) }
+  async parseSelection(ids: string[]) {
+    assertSelection(ids)
+    return Promise.all(ids.map(async id => this.parseRecipe(await this.getRecipe(id))))
+  }
+  async validateKitchen(kitchen: KitchenConfig) {
+    const config = buildDeviceConfig(kitchen)
+    const report = await this.request<{ valid: boolean; errors: ValidationError[] }>('/devices/validate', config)
+    if (!report.valid) throw new ProductApiError('厨房设备配置未通过校验', 422, 'VALIDATION_FAILED', report.errors)
+    return config
+  }
+  async createSchedule(ids: string[], kitchen: KitchenConfig, parsed: ParseResult[]) {
+    assertSelection(ids)
+    if (parsed.length !== ids.length || !ids.every(id => parsed.some(result => result.recipe_id === id && result.tasks.length > 0))) throw new Error('请重新解析选中的菜谱')
+    const tasks = parsed.flatMap(result => result.tasks)
+    if (tasks.some(task => Object.values(task.field_status ?? {}).includes('missing'))) throw new Error('解析存在缺失字段，请更换菜谱；当前版本尚不支持字段补录')
+    const request: InitialRequest = { schema_version: '1.0', request_id: `product_${crypto.randomUUID()}`, tasks, device_config: await this.validateKitchen(kitchen) }
+    const response = await this.request<ScheduleResponse>('/schedules', request)
+    if (!response.validation.valid || !['OPTIMAL', 'FEASIBLE'].includes(response.solver.status)) throw new Error('后端排程未通过校验')
+    return { request, schedule: toDashboard(response, tasks) }
+  }
+}
+export const productApi = new ProductApi()
+export const productErrorMessage = (error: unknown) => error instanceof ProductApiError
+  ? `${error.code}：${error.message}${error.details.length ? '；' + error.details.map(detail => `${detail.path ?? ''} ${detail.message}`).join('；') : ''}`
+  : error instanceof Error ? error.message : '请求失败，请检查后端连接后重试'
