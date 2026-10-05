@@ -32,13 +32,13 @@ afterEach(() => {
 
 it('keeps model fields inactive for deterministic parsing and enables them for AI parsing', () => {
   render(<ModelSettingsDialog {...props()} />)
-  expect(screen.getByLabelText(/^Base URL/)).toBeDisabled()
+  expect(screen.getByLabelText(/^服务地址/)).toBeDisabled()
   expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled()
 
-  fireEvent.click(screen.getByText('AI 增强解析'))
-  expect(screen.getByLabelText(/^Base URL/)).toBeEnabled()
-  expect(screen.getByLabelText(/^模型名称/)).toBeEnabled()
-  expect(screen.getByLabelText(/^API Key/)).toBeEnabled()
+  fireEvent.click(screen.getByText('智能模式'))
+  expect(screen.getByLabelText(/^服务地址/)).toBeEnabled()
+  expect(screen.getByLabelText(/^服务模型/)).toBeEnabled()
+  expect(screen.getByLabelText(/^访问密钥/)).toBeEnabled()
 })
 
 it('locks page scrolling and closes with Escape', async () => {

@@ -82,34 +82,34 @@ export default function ModelSettingsDialog({ open, settings, busy, onClose, onS
   return <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section className="model-dialog" role="dialog" aria-modal="true" aria-labelledby="model-settings-title" aria-describedby="model-settings-description">
       <div className="dialog-heading">
-        <div><p className="eyebrow">MODEL CONFIGURATION</p><h2 id="model-settings-title">模型与解析设置</h2><p id="model-settings-description">选择解析引擎，并配置兼容 OpenAI 接口的模型服务。</p></div>
+        <div><p className="eyebrow">智能解析设置</p><h2 id="model-settings-title">菜谱理解设置</h2><p id="model-settings-description">选择系统理解菜谱文字的方式。高级模式需要连接你自己的智能服务。</p></div>
         <button ref={closeButtonRef} type="button" className="icon-button" aria-label="关闭模型设置" disabled={busy} onClick={onClose}>×</button>
       </div>
       <div className="dialog-scroll-area">
-        <div className="model-safety-note"><span aria-hidden="true">✓</span><div><b>模型的职责边界</b><p>仅用于理解菜谱语义；字段校验、设备约束与 CP-SAT 排程仍由确定性逻辑负责。</p></div></div>
+        <div className="model-safety-note"><span aria-hidden="true">✓</span><div><b>系统如何保证计划可靠</b><p>智能服务只负责读懂菜谱；设备冲突、先后顺序和时间安排仍由本地规则严格检查。</p></div></div>
         <fieldset className="provider-options" disabled={busy}>
-          <legend>菜谱解析方式</legend>
+          <legend>菜谱理解方式</legend>
           <label className={provider === 'deterministic' ? 'selected' : ''}>
             <input type="radio" name="parser-provider" checked={provider === 'deterministic'} onChange={() => setProvider('deterministic')} />
-            <span><b>规则解析</b><small>开箱即用、结果稳定，不需要外部模型</small></span>
+            <span><b>稳定模式</b><small>无需额外配置，适合直接体验和比赛演示</small></span>
           </label>
           <label className={provider === 'llm' ? 'selected' : ''}>
             <input type="radio" name="parser-provider" checked={provider === 'llm'} onChange={() => setProvider('llm')} />
-            <span><b>AI 增强解析</b><small>调用 OpenAI-compatible Chat Completions</small></span>
+            <span><b>智能模式</b><small>更灵活地理解自然语言菜谱，需要连接外部服务</small></span>
           </label>
         </fieldset>
         <div className={`model-form ${provider === 'deterministic' ? 'muted' : ''}`} aria-disabled={provider === 'deterministic'}>
-          <label>Base URL<input disabled={busy || provider === 'deterministic'} inputMode="url" value={baseUrl} placeholder="https://api.openai.com/v1" onChange={event => setBaseUrl(event.target.value)} /><small>填写服务根地址，无需附加 chat/completions。</small></label>
-          <label>模型名称<input disabled={busy || provider === 'deterministic'} value={model} placeholder="gpt-4o-mini" onChange={event => setModel(event.target.value)} /><small>使用服务商支持的精确模型 ID。</small></label>
-          <label>API Key<input disabled={busy || provider === 'deterministic'} type="password" autoComplete="new-password" value={apiKey} placeholder={settings.api_key_masked ?? '输入 API Key'} onChange={event => setApiKey(event.target.value)} /><small>{settings.api_key_masked ? `当前密钥 ${settings.api_key_masked}，留空将继续使用` : '密钥仅发送到本机后端，不写入浏览器存储'}</small></label>
+          <label>服务地址<input disabled={busy || provider === 'deterministic'} inputMode="url" value={baseUrl} placeholder="https://api.openai.com/v1" onChange={event => setBaseUrl(event.target.value)} /><small>填写智能服务提供的接口根地址。</small></label>
+          <label>服务模型<input disabled={busy || provider === 'deterministic'} value={model} placeholder="gpt-4o-mini" onChange={event => setModel(event.target.value)} /><small>填写服务商提供的模型名称。</small></label>
+          <label>访问密钥<input disabled={busy || provider === 'deterministic'} type="password" autoComplete="new-password" value={apiKey} placeholder={settings.api_key_masked ?? '输入访问密钥'} onChange={event => setApiKey(event.target.value)} /><small>{settings.api_key_masked ? `当前密钥 ${settings.api_key_masked}，留空将继续使用` : '密钥只发送到本机服务，不保存在浏览器中'}</small></label>
         </div>
         <div className={`model-status ${provider === 'deterministic' || settings.ready ? 'ready' : ''}`}>
-          <span><i aria-hidden="true" />{settings.ready ? '模型服务已就绪' : provider === 'deterministic' ? '当前使用规则解析' : '模型服务尚未就绪'}</span><small>{settings.source === 'environment' ? '配置来自环境变量' : '配置仅在当前服务进程生效'}</small>
+          <span><i aria-hidden="true" />{settings.ready ? '智能服务已就绪' : provider === 'deterministic' ? '当前使用稳定模式' : '智能服务尚未连接'}</span><small>{settings.source === 'environment' ? '使用服务端预设配置' : '设置仅在本次运行期间生效'}</small>
         </div>
         {feedback && <p className={`dialog-feedback ${feedbackType}`} role={feedbackType === 'error' ? 'alert' : 'status'}>{feedback}</p>}
       </div>
       <div className="dialog-actions">
-        <button className="text-button danger" disabled={busy} onClick={() => void perform('reset', async () => { await onReset(); return '已恢复环境变量默认配置' })}>{pendingAction === 'reset' ? '恢复中…' : '恢复默认'}</button>
+        <button className="text-button danger" disabled={busy} onClick={() => void perform('reset', async () => { await onReset(); return '已已恢复服务端默认设置' })}>{pendingAction === 'reset' ? '恢复中…' : '恢复默认'}</button>
         <span />
         <button className="secondary" disabled={busy || provider === 'deterministic' || !canConnect} onClick={() => void perform('test', () => onTest(payload()))}>{pendingAction === 'test' ? '测试中…' : '测试连接'}</button>
         <button className="primary" disabled={busy || (provider === 'llm' && !canConnect)} onClick={() => void perform('save', async () => { await onSave(payload()); return '设置已保存' }).then(success => { if (success) onClose() })}>{pendingAction === 'save' ? '保存中…' : '保存设置'}</button>
