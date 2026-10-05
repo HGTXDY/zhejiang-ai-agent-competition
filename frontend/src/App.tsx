@@ -11,6 +11,13 @@ import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
 
+const productSteps: { key: ProductStep; number: string; label: string }[] = [
+  { key: 'recipes', number: '01', label: '选择菜谱' },
+  { key: 'kitchen', number: '02', label: '配置厨房' },
+  { key: 'confirm', number: '03', label: '解析确认' },
+  { key: 'result', number: '04', label: '查看排程' },
+]
+
 const defaultKitchen: KitchenConfig = { target_time: '12:30', operator_count: 1, stove_count: 1, steamer_count: 1, oven_count: 1, refrigerator_count: 1, dishwasher_count: 1, range_hood_count: 1, water_purifier_count: 1 }
 const isHttp = import.meta.env.VITE_API_MODE === 'http'
 
@@ -38,6 +45,11 @@ export default function App() {
   const [warnings, setWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [schedule, setSchedule] = useState<DashboardSchedule | null>(null)
+
+  useEffect(() => {
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [step])
 
   const selected = useMemo(() => selectedIds.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)).filter(Boolean) as RecipeSummary[], [selectedIds, recipeCatalog])
   const visibleRecipes = useMemo(() => {
@@ -91,18 +103,36 @@ export default function App() {
     })
   }
 
+  function navigateTo(target: ProductStep) {
+    if (loading || target === step) return
+    if (target === 'recipes') {
+      setValidationErrors([]); setWarnings([]); setConfirmed(false); setStep('recipes')
+      return
+    }
+    if (target === 'kitchen') {
+      void continueToKitchen()
+      return
+    }
+    if (target === 'confirm') {
+      void continueToConfirm()
+      return
+    }
+    if (schedule) setStep('result')
+    else setValidationErrors(['请先完成解析确认并生成初始排程'])
+  }
+
   if (step === 'result' && schedule) return <ExecutionDashboard initialSchedule={schedule} />
 
   return <main className="product-shell">
     <header className="product-topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="product-status"><span className="status-dot" />厨房 A · 智能排程助手 · {apiMode}</div></header>
     <section className="product-content">
       <div className="product-heading"><div><p className="eyebrow">SMART COOKING PLANNER / V1</p><h1>从选菜开始，安排一场准时的晚餐。</h1><p className="subtitle">灶序会根据菜品、设备和目标开饭时间，生成可执行的烹饪排程。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道菜已选</span></div></div>
-      <nav className="stepper" aria-label="排程创建步骤">{[['recipes', '01', '选择菜谱'], ['kitchen', '02', '配置厨房'], ['confirm', '03', '解析确认'], ['result', '04', '查看排程']].map(([key, number, label], index) => <button key={key} className={`${step === key ? 'active' : ''} ${['recipes', 'kitchen', 'confirm', 'result'].indexOf(step) > index ? 'done' : ''}`} disabled={loading || ['recipes', 'kitchen', 'confirm', 'result'].indexOf(key) > ['recipes', 'kitchen', 'confirm', 'result'].indexOf(step)} onClick={() => { if (key !== 'result') { setConfirmed(false); setStep(key as ProductStep) } }}><b>{number}</b><span>{label}</span></button>)}</nav>
+      <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
       {validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}
       {warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}
       {catalogLoading && <p role="status">正在加载官方菜谱…</p>}
       {catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重试加载</button></div>}
-      {step === 'recipes' && <section className="planner-grid"><div className="planner-main"><div className="section-toolbar"><div><p className="eyebrow">RECIPE LIBRARY</p><h2>选择今天要做的菜</h2></div><label className="search-box">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索菜名或步骤" /></label></div><div className="recipe-grid">{visibleRecipes.map(recipe => <button key={recipe.recipe_id} className={`recipe-card ${selectedIds.includes(recipe.recipe_id) ? 'selected' : ''}`} onClick={() => toggleRecipe(recipe)}><span className="recipe-check">{selectedIds.includes(recipe.recipe_id) ? '✓' : '+'}</span><div><strong>{recipe.name}</strong><small>{recipe.step_count} 个步骤 · {recipe.tags.join(' · ')}</small><p>{recipe.preview}</p></div></button>)}</div></div><aside className="selection-panel"><p className="eyebrow">SELECTED DISHES</p><h2>本次排程</h2>{selected.length ? selected.map((recipe, index) => <div className="selected-recipe" key={recipe.recipe_id}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div><button onClick={() => toggleRecipe(recipe)}>×</button></div>) : <p className="empty-state">请选择 3～5 道菜</p>}<button className="primary wide" disabled={loading || catalogLoading || selected.length < 3} onClick={() => void continueToKitchen()}>下一步：配置厨房 →</button></aside></section>}
+      {step === 'recipes' && <section className="planner-grid"><div className="planner-main"><div className="section-toolbar"><div><p className="eyebrow">RECIPE LIBRARY</p><h2>选择今天要做的菜</h2></div><label className="search-box">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索菜名或步骤" /></label></div><div className="recipe-grid">{visibleRecipes.map(recipe => <button key={recipe.recipe_id} className={`recipe-card ${selectedIds.includes(recipe.recipe_id) ? 'selected' : ''}`} onClick={() => toggleRecipe(recipe)}><span className="recipe-check">{selectedIds.includes(recipe.recipe_id) ? '✓' : '+'}</span><div><strong>{recipe.name}</strong><small>{recipe.step_count} 个步骤 · {recipe.tags.join(' · ')}</small><p>{recipe.preview}</p></div></button>)}</div></div><aside className="selection-panel"><p className="eyebrow">SELECTED DISHES</p><h2>本次排程</h2>{selected.length ? selected.map((recipe, index) => <div className="selected-recipe" key={recipe.recipe_id}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div><button onClick={() => toggleRecipe(recipe)}>×</button></div>) : <p className="empty-state">请选择 3～5 道菜</p>}<button type="button" className="primary wide" disabled={loading || catalogLoading} aria-describedby="selection-requirement" onClick={() => void continueToKitchen()}>下一步：配置厨房 →</button><p id="selection-requirement" className={`selection-hint ${selected.length >= 3 ? 'ready' : ''}`}>{selected.length >= 3 ? '已满足要求，可以继续配置厨房' : `还需选择 ${3 - selected.length} 道菜（共需 3～5 道）`}</p></aside></section>}
       {step === 'kitchen' && <KitchenStep kitchen={kitchen} setKitchen={value => { setKitchen(value); setParsed([]); setConfirmed(false) }} loading={loading} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} selected={selected} />}
       {step === 'confirm' && <ConfirmStep parsed={parsed} confirmed={confirmed} setConfirmed={setConfirmed} kitchen={kitchen} selected={selected} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} loading={loading} />}
     </section>

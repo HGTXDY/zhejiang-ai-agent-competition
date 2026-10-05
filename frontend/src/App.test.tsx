@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import responseExample from '../../contracts/v1/examples/schedule-response-v1.json'
 import taskExample from '../../contracts/v1/examples/schedule-request-v1.json'
@@ -21,6 +21,29 @@ async function flow(names: string[]) {
   fireEvent.click(screen.getByRole('button', { name: /生成初始排程/ }))
   await screen.findByText('任务队列')
 }
+
+
+it('keeps primary and step navigation actionable with clear validation feedback', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText(/MOCK API/)
+
+  const next = screen.getByRole('button', { name: /下一步：配置厨房/ })
+  expect(next).toBeEnabled()
+  fireEvent.click(next)
+  expect(await screen.findByText('请选择 3～5 道不同的菜')).toBeInTheDocument()
+
+  for (const recipe of recipeCatalog.slice(0, 3)) fireEvent.click(screen.getByRole('button', { name: new RegExp(recipe.name) }))
+  const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
+  fireEvent.click(steps.getByRole('button', { name: /配置厨房/ }))
+  expect(await screen.findByText('告诉我你的厨房现在有什么')).toBeInTheDocument()
+
+  fireEvent.click(steps.getByRole('button', { name: /选择菜谱/ }))
+  expect(await screen.findByText('选择今天要做的菜')).toBeInTheDocument()
+  fireEvent.click(steps.getByRole('button', { name: /解析确认/ }))
+  expect(await screen.findByText('确认菜谱解析结果')).toBeInTheDocument()
+})
 
 it('HTTP: real non-Demo selection flows into ExecutionDashboard and delayed replan with the identical request', async () => {
   vi.stubEnv('VITE_API_MODE', 'http')
