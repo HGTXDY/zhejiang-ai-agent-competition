@@ -24,10 +24,10 @@ const apiSchedule = (response: ScheduleResponse): DashboardSchedule => {
       label: RESOURCE_LABELS[id] ?? id,
       tone: RESOURCE_TONES[index % RESOURCE_TONES.length],
     })),
-    tasks: response.tasks.map(task => ({ ...task, action: (task as ScheduleTaskWithAction).action ?? task.task_id })),
+    tasks: response.tasks.map(task => ({ ...task, action: (task as ScheduleTaskWithAction).action ?? task.task_id, dish_name: (task as ScheduleTaskWithAction).dish_name })),
   }
 }
-interface ScheduleTaskWithAction { action?: string }
+interface ScheduleTaskWithAction { action?: string; dish_name?: string }
 const toDiffs = (response: ReplanResponse): ReplanResult['changes'] => response.changes.map(change => ({
   task_id: change.task_id,
   action: (response.schedule.tasks.find(task => task.task_id === change.task_id) as ScheduleTaskWithAction | undefined)?.action ?? change.task_id,
@@ -45,13 +45,13 @@ const toResult = (response: ReplanResponse): ReplanResult => ({ schedule: apiSch
  * send only the standard V1 `ScheduleResponse` fields or the schema rejects it.
  */
 export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRequest, current: DashboardSchedule): Record<string, unknown> => {
-  const { resources: _resources, ...standardSchedule } = current
+  const { resources: _resources, target_time: _targetTime, ...standardSchedule } = current
   return {
     event,
     schedule_request: scheduleRequest,
     current_schedule: {
       ...standardSchedule,
-      tasks: current.tasks.map(({ action: _action, ...task }) => task),
+      tasks: current.tasks.map(({ action: _action, dish_name: _dishName, ...task }) => task),
     },
   }
 }

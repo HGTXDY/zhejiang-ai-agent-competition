@@ -16,8 +16,9 @@ export interface ScheduleTask {
   notification_points: NotificationPoint[]
 }
 export interface DashboardTask extends ScheduleTask {
-  /** UI-only label populated by the adapter until the task action field is added to V1. */
+  /** UI-only labels populated by the adapter; never sent to the V1 API. */
   action: string
+  dish_name?: string
 }
 export interface NotificationPoint { type: 'start' | 'prepare' | 'manual' | 'complete' | 'exception'; offset_sec: number; message: string }
 export interface Solver { status: SolverStatus; objective_value: number | null; best_bound: number | null; gap: number | null; duration_ms: number }
@@ -34,7 +35,7 @@ export interface ScheduleResponse {
   timings_ms: { parse: number; validation: number; solve: number; notification: number; total: number }
   notifications: Notification[]
 }
-export type DashboardSchedule = Omit<ScheduleResponse, 'tasks'> & { tasks: DashboardTask[]; resources: TimelineResource[] }
+export type DashboardSchedule = Omit<ScheduleResponse, 'tasks'> & { tasks: DashboardTask[]; resources: TimelineResource[]; target_time?: string }
 export interface Notification {
   notification_id: string
   level: NotificationLevel

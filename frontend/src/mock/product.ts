@@ -33,8 +33,8 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
     const base = index * 480
     const resource = cookingResources[index % cookingResources.length]
     return [
-      { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, action: `${recipe.name}备料`, start_offset_sec: base, end_offset_sec: base + 150, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource.id], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}备料`, start_offset_sec: base, end_offset_sec: base + 150, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource.id], status: 'PENDING', locked: false, notification_points: [] },
     ]
   })
   const schedule: DashboardSchedule = {
@@ -45,6 +45,7 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
     metrics: { ...initialSchedule.metrics, makespan_sec: tasks.length ? Math.max(...tasks.map(task => task.end_offset_sec)) : 0, target_delay_sec: 0 },
     tasks,
     resources,
+    target_time: request.kitchen.target_time,
     validation: { valid: true, errors: [] },
   }
   return { schedule, validation }

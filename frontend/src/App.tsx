@@ -85,11 +85,11 @@ export default function App() {
       if (!confirmed) throw new Error('请先确认菜谱步骤')
       if (isHttp) {
         const result = await productApi.createSchedule(selectedIds, kitchen, parsed)
-        api.setScheduleRequest({ ...result.request }); setSchedule(result.schedule)
+        api.setScheduleRequest({ ...result.request }); setSchedule({ ...result.schedule, target_time: kitchen.target_time, tasks: result.schedule.tasks.map(task => ({ ...task, dish_name: selected.find(recipe => recipe.recipe_id === task.dish_id)?.name })) })
       } else {
         const result = await createMockSchedule({ recipe_ids: selectedIds, kitchen })
         if (!result.validation.valid) throw new Error(result.validation.errors.join('；'))
-        setSchedule(result.schedule)
+        setSchedule({ ...result.schedule, target_time: kitchen.target_time, tasks: result.schedule.tasks.map(task => ({ ...task, dish_name: selected.find(recipe => recipe.recipe_id === task.dish_id)?.name })) })
       }
       setStep('result')
     })
