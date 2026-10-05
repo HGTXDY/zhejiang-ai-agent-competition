@@ -406,3 +406,44 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .recipe-grid { max-height: 62vh; overflow-y: auto; padding-right: 5px; }
   .selection-panel { position: static; }
 }
+
+/* Model settings: adapted from Sheldon's settings form, fitted to CookFlow tokens. */
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.model-settings-trigger { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); background: var(--paper); font: inherit; font-size: 12px; cursor: pointer; }
+.model-settings-trigger:hover { border-color: var(--green); box-shadow: 0 5px 18px rgba(34, 76, 54, .1); }
+.model-settings-trigger b { padding-left: 7px; border-left: 1px solid var(--border); color: var(--green-2); }
+.model-pulse { width: 8px; height: 8px; border-radius: 50%; background: #8d948f; box-shadow: 0 0 0 4px rgba(141, 148, 143, .12); }
+.model-pulse.active { background: var(--green); box-shadow: 0 0 0 4px rgba(43, 111, 73, .14); }
+.dialog-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(20, 26, 22, .55); backdrop-filter: blur(8px); }
+.model-dialog { width: min(650px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 26px; border: 1px solid rgba(255, 255, 255, .65); border-radius: 22px; background: var(--paper); box-shadow: 0 24px 80px rgba(16, 30, 21, .3); }
+.dialog-heading { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 18px; }
+.dialog-heading h2 { margin: 3px 0 0; }
+.icon-button { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--muted); font-size: 22px; cursor: pointer; }
+.model-safety-note { display: grid; gap: 4px; padding: 13px 15px; border-radius: 12px; color: var(--green-2); background: var(--green-soft); font-size: 12px; line-height: 1.5; }
+.provider-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0; margin: 22px 0; border: 0; }
+.provider-options legend { grid-column: 1 / -1; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.provider-options label { display: flex; gap: 10px; align-items: flex-start; padding: 14px; border: 1px solid var(--border); border-radius: 13px; cursor: pointer; }
+.provider-options label.selected { border-color: var(--green); background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--green); }
+.provider-options input { accent-color: var(--green); margin-top: 3px; }
+.provider-options span { display: grid; gap: 4px; }
+.provider-options small, .model-form label > small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.model-form { display: grid; gap: 14px; }
+.model-form label { display: grid; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.model-form input { width: 100%; min-height: 44px; padding: 0 13px; border: 1px solid var(--border); border-radius: 11px; color: var(--ink); background: #fff; font: inherit; }
+.model-form input:focus { outline: 3px solid rgba(43, 111, 73, .13); border-color: var(--green); }
+.model-status { display: flex; justify-content: space-between; margin-top: 15px; padding: 10px 12px; border-radius: 10px; color: #8b692e; background: #fff5dc; font-size: 12px; }
+.model-status.ready { color: var(--green-2); background: var(--green-soft); }
+.dialog-feedback { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: #f2f0e9; color: var(--ink); font-size: 12px; }
+.dialog-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; margin-top: 22px; }
+.text-button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; }
+.text-button.danger { color: #9b4138; }
+@media (max-width: 720px) {
+  .product-status { display: none; }
+  .model-settings-trigger { max-width: 190px; }
+  .provider-options { grid-template-columns: 1fr; }
+  .dialog-backdrop { align-items: end; padding: 0; }
+  .model-dialog { max-height: 92vh; border-radius: 22px 22px 0 0; padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); }
+  .dialog-actions { grid-template-columns: 1fr 1fr; }
+  .dialog-actions span { display: none; }
+  .dialog-actions .text-button { grid-column: 1 / -1; justify-self: start; }
+}

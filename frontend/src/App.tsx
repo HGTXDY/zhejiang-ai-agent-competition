@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import ExecutionDashboard from './components/ExecutionDashboard'
+import ModelSettingsDialog from './components/ModelSettingsDialog'
 import { api, apiMode } from './api/client'
 import { recipeCatalog as mockCatalog } from './mock/recipes'
 import { createMockSchedule, validateProductRequest } from './mock/product'
 import { productApi, productErrorMessage, assertSelection } from './api/product'
-import type { ParseResult } from './api/product'
+import type { ModelSettings, ModelSettingsUpdate, ParseResult } from './api/product'
 import type { DashboardSchedule } from './types/contracts'
 import type { KitchenConfig, RecipeSummary } from './types/product'
 import './styles.css'
@@ -20,6 +21,7 @@ const productSteps: { key: ProductStep; number: string; label: string }[] = [
 
 const defaultKitchen: KitchenConfig = { target_time: '12:30', operator_count: 1, stove_count: 1, steamer_count: 1, oven_count: 1, refrigerator_count: 1, dishwasher_count: 1, range_hood_count: 1, water_purifier_count: 1 }
 const isHttp = import.meta.env.VITE_API_MODE === 'http'
+const mockModelSettings: ModelSettings = { parser_provider: 'deterministic', configured: false, ready: false, base_url: null, model: 'gpt-4o-mini', api_key_masked: null, source: 'runtime', notes: [] }
 
 export default function App() {
   const [recipeCatalog, setRecipeCatalog] = useState<RecipeSummary[]>([])
@@ -28,6 +30,9 @@ export default function App() {
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState('')
   const [retry, setRetry] = useState(0)
+  const [modelSettings, setModelSettings] = useState<ModelSettings>(mockModelSettings)
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
+  const [modelBusy, setModelBusy] = useState(false)
   useEffect(() => {
     if (!isHttp) { setRecipeCatalog(mockCatalog); setCatalogLoading(false); return }
     let active = true
@@ -35,6 +40,7 @@ export default function App() {
     void productApi.listRecipes().then(recipes => { if (active) setRecipeCatalog(recipes) })
       .catch(error => { if (active) setCatalogError(productErrorMessage(error)) })
       .finally(() => { if (active) setCatalogLoading(false) })
+    void productApi.getModelSettings().then(settings => { if (active) setModelSettings(settings) }).catch(() => undefined)
     return () => { active = false }
   }, [retry])
   const [step, setStep] = useState<ProductStep>('recipes')
@@ -78,7 +84,7 @@ export default function App() {
       let results: ParseResult[] = []
       if (isHttp) {
         await productApi.validateKitchen(kitchen)
-        results = await productApi.parseSelection(selectedIds)
+        results = await productApi.parseSelection(selectedIds, modelSettings.parser_provider)
       } else {
         const report = await validateProductRequest({ recipe_ids: selectedIds, kitchen })
         if (!report.valid) throw new Error(report.errors.join('；'))
@@ -103,6 +109,27 @@ export default function App() {
     })
   }
 
+  async function updateModelSettings(payload: ModelSettingsUpdate) {
+    setModelBusy(true)
+    try {
+      const settings = isHttp ? await productApi.updateModelSettings(payload) : { ...modelSettings, ...payload, configured: false, ready: false }
+      setModelSettings(settings as ModelSettings); setParsed([]); setConfirmed(false)
+    } finally { setModelBusy(false) }
+  }
+  async function testModelSettings(payload: ModelSettingsUpdate) {
+    if (!isHttp) return 'Mock 模式不连接外部模型'
+    setModelBusy(true)
+    try { return (await productApi.testModelSettings(payload)).message }
+    finally { setModelBusy(false) }
+  }
+  async function resetModelSettings() {
+    setModelBusy(true)
+    try {
+      const settings = isHttp ? await productApi.resetModelSettings() : mockModelSettings
+      setModelSettings(settings); setParsed([]); setConfirmed(false)
+    } finally { setModelBusy(false) }
+  }
+
   function navigateTo(target: ProductStep) {
     if (loading || target === step) return
     if (target === 'recipes') {
@@ -124,7 +151,7 @@ export default function App() {
   if (step === 'result' && schedule) return <ExecutionDashboard initialSchedule={schedule} />
 
   return <main className="product-shell">
-    <header className="product-topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="product-status"><span className="status-dot" />厨房 A · 智能排程助手 · {apiMode}</div></header>
+    <header className="product-topbar"><div className="brand"><div className="brand-mark">灶</div><div><strong>灶序</strong><span>COOKFLOW AGENT</span></div></div><div className="topbar-actions"><div className="product-status"><span className="status-dot" />厨房 A · 智能排程助手 · {apiMode}</div><button type="button" className="model-settings-trigger" onClick={() => setModelSettingsOpen(true)}><span className={modelSettings.parser_provider === 'llm' ? 'model-pulse active' : 'model-pulse'} />{modelSettings.parser_provider === 'llm' ? `AI · ${modelSettings.model}` : '规则解析'}<b>设置</b></button></div></header>
     <section className="product-content">
       <div className="product-heading"><div><p className="eyebrow">SMART COOKING PLANNER / V1</p><h1>从选菜开始，安排一场准时的晚餐。</h1><p className="subtitle">灶序会根据菜品、设备和目标开饭时间，生成可执行的烹饪排程。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道菜已选</span></div></div>
       <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
@@ -136,6 +163,7 @@ export default function App() {
       {step === 'kitchen' && <KitchenStep kitchen={kitchen} setKitchen={value => { setKitchen(value); setParsed([]); setConfirmed(false) }} loading={loading} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} selected={selected} />}
       {step === 'confirm' && <ConfirmStep parsed={parsed} confirmed={confirmed} setConfirmed={setConfirmed} kitchen={kitchen} selected={selected} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} loading={loading} />}
     </section>
+    <ModelSettingsDialog open={modelSettingsOpen} settings={modelSettings} busy={modelBusy} onClose={() => setModelSettingsOpen(false)} onSave={updateModelSettings} onTest={testModelSettings} onReset={resetModelSettings} />
   </main>
 }
 

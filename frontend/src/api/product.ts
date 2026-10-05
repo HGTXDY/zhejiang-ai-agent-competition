@@ -13,6 +13,15 @@ export interface ParsedTask {
   device_requirement?: { device_type: string; mode?: string | null; temperature_c?: number | null; capacity_units: number }
   confidence?: number | null; field_status?: Record<string, string>
 }
+export type ParserProvider = 'deterministic' | 'llm'
+export interface ModelSettings {
+  parser_provider: ParserProvider; configured: boolean; ready: boolean; base_url: string | null; model: string
+  api_key_masked: string | null; source: 'environment' | 'runtime'; notes: string[]
+}
+export interface ModelSettingsUpdate {
+  parser_provider?: ParserProvider; base_url?: string | null; model?: string | null; api_key?: string | null; clear_api_key?: boolean
+}
+export interface ModelProbeResult { ok: boolean; model: string; base_url: string; message: string }
 export interface ParseResult { schema_version: '1.0'; recipe_id: string; provider: string; tasks: ParsedTask[] }
 export interface DeviceConfig {
   schema_version: '1.0'; operator_count: number; target_ready_at: string
@@ -50,15 +59,15 @@ export function toDashboard(response: ScheduleResponse, tasks: ParsedTask[]): Da
 }
 export class ProductApi {
   constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
-  private async request<T>(path: string, payload?: unknown): Promise<T> {
+  private async request<T>(path: string, payload?: unknown, method?: 'POST' | 'PUT' | 'DELETE'): Promise<T> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 70000)
     try {
       const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
-        signal: controller.signal, ...(payload === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+        signal: controller.signal, ...(!method && payload === undefined ? {} : { method: method ?? 'POST', headers: { 'Content-Type': 'application/json' }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) }),
       })
       const body = await response.json().catch(() => { throw new ProductApiError('后端返回了无效 JSON', response.status, 'INVALID_RESPONSE') })
-      if (!response.ok) throw new ProductApiError(body.error?.message ?? `请求失败（${response.status}）`, response.status, body.error?.code ?? 'HTTP_ERROR', body.error?.details ?? [])
+      if (!response.ok) throw new ProductApiError(body.error?.message ?? body.detail ?? `请求失败（${response.status}）`, response.status, body.error?.code ?? 'HTTP_ERROR', body.error?.details ?? [])
       return body as T
     } finally { clearTimeout(timeout) }
   }
@@ -67,11 +76,15 @@ export class ProductApi {
     return result.recipes.map(recipe => ({ ...recipe, preview: `${recipe.ingredient_count} 种食材`, tags: ['官方菜谱'] }))
   }
   getRecipe(id: string) { return this.request<Recipe>(`/recipes/${encodeURIComponent(id)}`) }
-  parseRecipe(recipe: Recipe) { return this.request<ParseResult>('/recipes/parse', recipe) }
-  async parseSelection(ids: string[]) {
+  parseRecipe(recipe: Recipe, provider: ParserProvider = 'deterministic') { return this.request<ParseResult>(provider === 'llm' ? '/recipes/parse?provider=llm' : '/recipes/parse', recipe) }
+  async parseSelection(ids: string[], provider: ParserProvider = 'deterministic') {
     assertSelection(ids)
-    return Promise.all(ids.map(async id => this.parseRecipe(await this.getRecipe(id))))
+    return Promise.all(ids.map(async id => this.parseRecipe(await this.getRecipe(id), provider)))
   }
+  getModelSettings() { return this.request<ModelSettings>('/settings/model') }
+  updateModelSettings(payload: ModelSettingsUpdate) { return this.request<ModelSettings>('/settings/model', payload, 'PUT') }
+  testModelSettings(payload: ModelSettingsUpdate) { return this.request<ModelProbeResult>('/settings/model/test', payload) }
+  resetModelSettings() { return this.request<ModelSettings>('/settings/model', undefined, 'DELETE') }
   async validateKitchen(kitchen: KitchenConfig) {
     const config = buildDeviceConfig(kitchen)
     const report = await this.request<{ valid: boolean; errors: ValidationError[] }>('/devices/validate', config)

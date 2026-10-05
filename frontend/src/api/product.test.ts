@@ -88,3 +88,30 @@ describe('device configuration', () => {
     expect(() => buildDeviceConfig({ ...kitchen, ...change })).toThrow()
   })
 })
+
+describe('parser provider', () => {
+  it('adds the llm provider only when AI parsing is selected', async () => {
+    const fetcher = vi.fn(async (url: string) => json({ schema_version: '1.0', recipe_id: 'r1', provider: 'llm', tasks: [] }))
+    vi.stubGlobal('fetch', fetcher)
+    await new ProductApi('http://api').parseRecipe({ schema_version: '1.0', recipe_id: 'r1', name: '鱼', ingredients: ['鱼'], steps_text: ['蒸鱼'] }, 'llm')
+    expect(fetcher.mock.calls[0][0]).toBe('http://api/recipes/parse?provider=llm')
+  })
+})
+
+describe('model settings', () => {
+  it('loads, updates and probes configuration without putting the key in a URL', async () => {
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      const parsedUrl = new URL(url)
+      if (parsedUrl.pathname === '/settings/model' && !init?.method) return new Response(JSON.stringify({ parser_provider: 'deterministic', configured: false, ready: false, base_url: null, model: 'gpt-4o-mini', api_key_masked: null, source: 'runtime', notes: [] }), { status: 200 })
+      if (parsedUrl.pathname === '/settings/model' && init?.method === 'PUT') return new Response(JSON.stringify({ parser_provider: 'llm', configured: true, ready: true, base_url: 'https://model.test/v1', model: 'cook-model', api_key_masked: 'sk-s********1234', source: 'runtime', notes: [] }), { status: 200 })
+      if (parsedUrl.pathname === '/settings/model/test') return new Response(JSON.stringify({ ok: true, model: 'cook-model', base_url: 'https://model.test/v1', message: '连接成功' }), { status: 200 })
+      throw new Error(`unexpected ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const api = new ProductApi('http://api.test')
+    expect((await api.getModelSettings()).parser_provider).toBe('deterministic')
+    await api.updateModelSettings({ parser_provider: 'llm', base_url: 'https://model.test/v1', model: 'cook-model', api_key: 'sk-secret' })
+    expect((await api.testModelSettings({ base_url: 'https://model.test/v1', model: 'cook-model', api_key: 'sk-secret' })).ok).toBe(true)
+    expect(fetcher.mock.calls.every(([url]) => !String(url).includes('sk-secret'))).toBe(true)
+  })
+})
