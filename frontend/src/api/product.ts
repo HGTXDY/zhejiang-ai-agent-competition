@@ -16,7 +16,7 @@ export interface ParsedTask {
 export interface ParseResult { schema_version: '1.0'; recipe_id: string; provider: string; tasks: ParsedTask[] }
 export interface DeviceConfig {
   schema_version: '1.0'; operator_count: number; target_ready_at: string
-  devices: { device_id: string; device_type: string; capacity_units: number; capabilities: { modes: string[]; temperature_min_c: number; temperature_max_c: number }; available: boolean }[]
+  devices: { device_id: string; device_type: string; capacity_units: number; capabilities: { modes: string[]; temperature_min_c: number | null; temperature_max_c: number | null }; available: boolean }[]
 }
 export interface InitialRequest { schema_version: '1.0'; request_id: string; tasks: ParsedTask[]; device_config: DeviceConfig }
 export class ProductApiError extends Error {
@@ -33,7 +33,7 @@ export function buildDeviceConfig(kitchen: KitchenConfig, now = new Date()): Dev
   if (target <= now) target.setDate(target.getDate() + 1)
   if (!Number.isInteger(kitchen.operator_count) || kitchen.operator_count < 1 || kitchen.operator_count > 20) throw new Error('操作员数量应为 1～20 的整数')
   const devices = (Object.keys(profiles) as (keyof typeof profiles)[]).flatMap(type => {
-    const count = kitchen[`${type}_count`]
+    const count = kitchen[`${type}_count`] ?? 0
     if (!Number.isInteger(count) || count < 0 || count > (type === 'stove' ? 8 : 4)) throw new Error('设备数量超出范围或不是整数')
     return Array.from({ length: count }, (_, i) => ({ device_id: `${type}_${i + 1}`, device_type: type, capacity_units: profiles[type].capacity_units, capabilities: { modes: [...profiles[type].modes], temperature_min_c: profiles[type].temperature_min_c, temperature_max_c: profiles[type].temperature_max_c }, available: true }))
   })

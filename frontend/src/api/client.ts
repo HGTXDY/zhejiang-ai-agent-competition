@@ -3,6 +3,7 @@ import { addDish as mockAddDish, getSchedule as mockGetSchedule, postEvent as mo
 import type { DashboardSchedule, DashboardTask, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
 
 export interface CookFlowApi {
+  setScheduleRequest(request: ScheduleRequest): void
   getSchedule(): Promise<DashboardSchedule>
   postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule): Promise<ReplanResult>
   addDish(current: DashboardSchedule): Promise<ReplanResult>
@@ -58,6 +59,9 @@ export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRe
 export class HttpCookFlowApi implements CookFlowApi {
   private scheduleRequest: ScheduleRequest | null = null
   constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
+  setScheduleRequest(request: ScheduleRequest): void {
+    this.scheduleRequest = structuredClone(request)
+  }
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
     const body = await response.json().catch(() => ({}))
@@ -71,7 +75,8 @@ export class HttpCookFlowApi implements CookFlowApi {
     return apiSchedule(await this.request<ScheduleResponse>('/v1/schedules', { method: 'POST', body: JSON.stringify(request) }))
   }
   private async replan(event: ReplanEvent, current: DashboardSchedule, addedTasks?: Record<string, unknown>[]): Promise<ReplanResult> {
-    if (!this.scheduleRequest) await this.getSchedule()
+    if (!this.scheduleRequest) throw new Error('缺少初始排程请求，请重新生成排程')
+    if (this.scheduleRequest.request_id !== current.request_id) throw new Error('排程请求上下文不匹配，请重新生成排程')
     const envelope = toReplanEnvelope(event, this.scheduleRequest!, current)
     if (addedTasks) event.payload = { ...event.payload, tasks: addedTasks }
     return toResult(await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) }))
@@ -93,6 +98,7 @@ export class HttpCookFlowApi implements CookFlowApi {
 }
 
 const mockApi: CookFlowApi = {
+  setScheduleRequest: () => {},
   getSchedule: mockGetSchedule,
   postEvent: async (task, status, current) => {
     const result = await mockPostEvent(task, status)
