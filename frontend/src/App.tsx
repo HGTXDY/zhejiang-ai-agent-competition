@@ -114,7 +114,11 @@ export default function App() {
     if (schedule) setStep('result'); else setValidationErrors(['请先确认菜谱步骤并生成做饭计划'])
   }
 
-  if (step === 'result' && schedule) return <ExecutionDashboard initialSchedule={schedule} />
+  if (step === 'result' && schedule) return <ExecutionDashboard
+    initialSchedule={schedule}
+    recipes={recipeCatalog}
+    onBackToPlanner={() => { setSchedule(null); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setStep('recipes') }}
+  />
   return <main className="product-shell">
     <header className="product-topbar">
       <div className="brand"><div className="brand-mark" aria-hidden="true">灶</div><div><strong>灶序</strong><span>智能做饭指挥台</span></div></div>

@@ -1,6 +1,7 @@
 import { ApiError } from '../lib/errors'
 import { initialSchedule } from './schedule'
 import type { DashboardSchedule, DashboardTask, Notification } from '../types/contracts'
+import type { RecipeSummary } from '../types/product'
 
 const wait = (ms = 220) => new Promise(resolve => window.setTimeout(resolve, ms))
 
@@ -55,24 +56,20 @@ export async function postEvent(
   return { task: { ...task, status }, notification }
 }
 
-export async function addDish(): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
+export async function addDish(recipe: RecipeSummary): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
   throwFault()
   await wait()
+  const stamp = Date.now()
+  const dishId = recipe.recipe_id
+  const dishName = recipe.name
   return {
     tasks: [
-      { task_id: 'tofu_prepare', dish_id: 'mapo_tofu', dish_name: '麻婆豆腐', action: '麻婆豆腐备料', start_offset_sec: 1260, end_offset_sec: 1380, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: 'tofu_stir', dish_id: 'mapo_tofu', dish_name: '麻婆豆腐', action: '麻婆豆腐烹制', start_offset_sec: 1380, end_offset_sec: 1680, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${dishId}_prepare_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}备料`, start_offset_sec: 1260, end_offset_sec: 1380, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${dishId}_cook_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}烹制`, start_offset_sec: 1380, end_offset_sec: 1680, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
     ],
     notification: {
-      notification_id: `dish-${Date.now()}`,
-      type: 'schedule_updated',
-      level: 'info',
-      trigger_offset_sec: 0,
-      dish_id: 'mapo_tofu',
-      action: '已加入临时菜：麻婆豆腐',
-      parameters: {},
-      message: '等待调度器计算最小扰动方案',
-      created_at: new Date().toISOString(),
+      notification_id: `dish-${stamp}`, type: 'schedule_updated', level: 'info', trigger_offset_sec: 0, dish_id: dishId,
+      action: `已加入临时菜：${dishName}`, parameters: {}, message: '等待调度器计算最小扰动方案', created_at: new Date().toISOString(),
     },
   }
 }

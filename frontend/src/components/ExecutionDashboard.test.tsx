@@ -1,8 +1,9 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ExecutionDashboard from './ExecutionDashboard'
 import { setMockFault } from '../mock/api'
+import { recipeCatalog } from '../mock/recipes'
 
 beforeEach(() => setMockFault('none'))
 afterEach(() => setMockFault('none'))
@@ -54,6 +55,26 @@ describe('ExecutionDashboard', () => {
     selectFishSteam()
     fireEvent.click(screen.getByRole('button', { name: '开始执行' }))
     await waitFor(() => expect(container.querySelector('.error-banner')).toHaveTextContent('网络连接失败'))
+  })
+
+
+  it('opens a dish picker and adds the selected dish instead of a fixed dish', async () => {
+    render(<ExecutionDashboard />)
+    fireEvent.click(screen.getByRole('button', { name: /临时加菜/ }))
+    expect(screen.getByRole('dialog', { name: '临时加菜' })).toBeInTheDocument()
+    const candidate = recipeCatalog.find(recipe => recipe.name === '麻辣对虾')!
+    fireEvent.click(within(screen.getByRole('dialog', { name: '临时加菜' })).getAllByRole('button', { name: new RegExp(candidate.name) })[0])
+    fireEvent.click(screen.getByRole('button', { name: '加入排程' }))
+    await waitFor(() => expect(screen.getAllByText(`已加入临时菜：${candidate.name}`).length).toBeGreaterThan(0))
+    expect(screen.getAllByText(new RegExp(candidate.name)).length).toBeGreaterThan(0)
+    expect(screen.queryByText('已加入临时菜：麻婆豆腐')).not.toBeInTheDocument()
+  })
+
+  it('can return to the planner from the execution view', () => {
+    const onBackToPlanner = vi.fn()
+    render(<ExecutionDashboard onBackToPlanner={onBackToPlanner} />)
+    fireEvent.click(screen.getByRole('button', { name: /返回选菜/ }))
+    expect(onBackToPlanner).toHaveBeenCalledOnce()
   })
 
   it('offers a fault drill control in mock mode', () => {

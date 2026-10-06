@@ -1,12 +1,14 @@
 import { ApiError } from '../lib/errors'
 import { addDish as mockAddDish, getSchedule as mockGetSchedule, postEvent as mockPostEvent } from '../mock/api'
 import type { DashboardSchedule, DashboardTask, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
+import type { RecipeSummary } from '../types/product'
+import type { ParseResult, Recipe } from './product'
 
 export interface CookFlowApi {
   setScheduleRequest(request: ScheduleRequest): void
   getSchedule(): Promise<DashboardSchedule>
   postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule): Promise<ReplanResult>
-  addDish(current: DashboardSchedule): Promise<ReplanResult>
+  addDish(current: DashboardSchedule, recipe: RecipeSummary): Promise<ReplanResult>
 }
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -77,8 +79,8 @@ export class HttpCookFlowApi implements CookFlowApi {
   private async replan(event: ReplanEvent, current: DashboardSchedule, addedTasks?: Record<string, unknown>[]): Promise<ReplanResult> {
     if (!this.scheduleRequest) throw new Error('缺少初始排程请求，请重新生成排程')
     if (this.scheduleRequest.request_id !== current.request_id) throw new Error('排程请求上下文不匹配，请重新生成排程')
-    const envelope = toReplanEnvelope(event, this.scheduleRequest!, current)
     if (addedTasks) event.payload = { ...event.payload, tasks: addedTasks }
+    const envelope = toReplanEnvelope(event, this.scheduleRequest!, current)
     return toResult(await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) }))
   }
   async postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule): Promise<ReplanResult> {
@@ -91,9 +93,14 @@ export class HttpCookFlowApi implements CookFlowApi {
     const payload = eventType === 'TASK_DELAYED' ? { task_id: task.task_id, delay_sec: 60 } : eventType === 'DEVICE_UNAVAILABLE' ? { device_id: task.assigned_resources.find(resource => resource !== 'operator_1') ?? task.assigned_resources[0] } : { task_id: task.task_id }
     return this.replan({ schema_version: '1.0', event_id: `evt_${Date.now()}`, schedule_id: current.schedule_id, event_type: eventType, occurred_at: new Date().toISOString(), payload }, current)
   }
-  async addDish(current: DashboardSchedule): Promise<ReplanResult> {
-    const task = { schema_version: '1.0', task_id: `added_dish_${Date.now()}`, dish_id: 'mapo_tofu', action: '麻婆豆腐烹制', resource_type: 'hybrid', duration_sec: 300, device_requirement: { device_type: 'stove', mode: 'stir_fry', capacity_units: 1 }, manual_segments: [{ offset_sec: 0, duration_sec: 30, action: '下锅' }], predecessors: [], interruptible: false, manual_required: true, manual_duration_sec: 30 }
-    return this.replan({ schema_version: '1.0', event_id: `evt_${Date.now()}`, schedule_id: current.schedule_id, event_type: 'DISH_ADDED', occurred_at: new Date().toISOString(), payload: { tasks: [task] } }, current, [task])
+  async addDish(current: DashboardSchedule, recipe: RecipeSummary): Promise<ReplanResult> {
+    const fullRecipe = await this.request<Recipe>(`/recipes/${encodeURIComponent(recipe.recipe_id)}`)
+    const parsed = await this.request<ParseResult>('/recipes/parse', { method: 'POST', body: JSON.stringify(fullRecipe) })
+    const stamp = Date.now()
+    const taskIdMap = new Map(parsed.tasks.map(task => [task.task_id, `${recipe.recipe_id}_${task.task_id}_${stamp}`]))
+    const tasks = parsed.tasks.map(task => ({ ...task, task_id: taskIdMap.get(task.task_id)!, dish_id: recipe.recipe_id, predecessors: task.predecessors.map(id => taskIdMap.get(id) ?? id) }))
+    if (!tasks.length) throw new Error('这道菜暂时无法解析出可执行步骤，请换一道菜')
+    return this.replan({ schema_version: '1.0', event_id: `evt_${stamp}`, schedule_id: current.schedule_id, event_type: 'DISH_ADDED', occurred_at: new Date().toISOString(), payload: { tasks } }, current, tasks)
   }
 }
 
@@ -109,8 +116,8 @@ const mockApi: CookFlowApi = {
       disruptionScore: 0,
     }
   },
-  addDish: async current => {
-    const result = await mockAddDish()
+  addDish: async (current, recipe) => {
+    const result = await mockAddDish(recipe)
     return {
       schedule: { ...current, tasks: [...current.tasks, ...result.tasks] },
       changes: result.tasks.map(task => ({ task_id: task.task_id, action: task.action, type: 'ADDED' as const, detail: '临时加菜加入排程' })),
