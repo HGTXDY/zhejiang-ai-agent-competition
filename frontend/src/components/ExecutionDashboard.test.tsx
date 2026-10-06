@@ -9,15 +9,15 @@ afterEach(() => setMockFault('none'))
 
 /** Select the unlocked PENDING task so the action buttons are available. */
 function selectFishSteam() {
-  fireEvent.click(screen.getByRole('button', { name: /fish_steam/ }))
+  fireEvent.click(screen.getAllByRole('button', { name: /清蒸鲈鱼.*待执行/ })[0])
 }
 
 describe('ExecutionDashboard', () => {
   it('renders the derived metrics and the task queue', () => {
     render(<ExecutionDashboard />)
-    expect(screen.getByText('当前进度')).toBeInTheDocument()
-    expect(screen.getByText('烹饪时间压缩')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /fish_steam/ })).toBeInTheDocument()
+    expect(screen.getByText('完成进度')).toBeInTheDocument()
+    expect(screen.getByText('节省时间')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /清蒸鲈鱼/ })[0]).toBeInTheDocument()
   })
 
   it('drives a task from PENDING through RUNNING to COMPLETED', async () => {

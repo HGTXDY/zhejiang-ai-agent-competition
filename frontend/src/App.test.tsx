@@ -17,9 +17,9 @@ async function flow(names: string[]) {
   await screen.findByText('告诉我你的厨房现在有什么')
   fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
   await screen.findByText('确认菜谱解析结果')
-  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(screen.getAllByRole('checkbox')[0])
   fireEvent.click(screen.getByRole('button', { name: /生成初始排程/ }))
-  await screen.findByText('任务队列')
+  await screen.findByText('接下来做什么')
 }
 
 
@@ -27,7 +27,7 @@ it('keeps primary and step navigation actionable with clear validation feedback'
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
-  await screen.findByText(/MOCK API/)
+  await screen.findByText(/演示模式/)
 
   const next = screen.getByRole('button', { name: /下一步：配置厨房/ })
   expect(next).toBeEnabled()
@@ -36,12 +36,12 @@ it('keeps primary and step navigation actionable with clear validation feedback'
 
   for (const recipe of recipeCatalog.slice(0, 3)) fireEvent.click(screen.getByRole('button', { name: new RegExp(recipe.name) }))
   const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
-  fireEvent.click(steps.getByRole('button', { name: /配置厨房/ }))
+  fireEvent.click(steps.getByRole('button', { name: /厨房条件/ }))
   expect(await screen.findByText('告诉我你的厨房现在有什么')).toBeInTheDocument()
 
   fireEvent.click(steps.getByRole('button', { name: /选择菜谱/ }))
   expect(await screen.findByText('选择今天要做的菜')).toBeInTheDocument()
-  fireEvent.click(steps.getByRole('button', { name: /解析确认/ }))
+  fireEvent.click(steps.getByRole('button', { name: /确认步骤/ }))
   expect(await screen.findByText('确认菜谱解析结果')).toBeInTheDocument()
 })
 
@@ -67,9 +67,9 @@ it('HTTP: real non-Demo selection flows into ExecutionDashboard and delayed repl
   const App = (await import('./App')).default
   render(<App />)
   await flow(['真实菜0', '真实菜1', '真实菜2'])
-  fireEvent.click(screen.getByRole('button', { name: /review_real_a_prepare/ }))
+  fireEvent.click(screen.getAllByRole('button', { name: /处理并腌制鲈鱼/ })[0])
   fireEvent.click(screen.getByRole('button', { name: '开始执行' }))
-  fireEvent.click(await screen.findByRole('button', { name: '上报延迟' }))
+  fireEvent.click(await screen.findByRole('button', { name: '发生延迟' }))
   await waitFor(() => expect(replanEnvelope).toBeDefined())
   expect(initialRequest.tasks.map((task: any) => task.dish_id)).toEqual(ids)
   expect(replanEnvelope.schedule_request).toEqual(initialRequest)
@@ -85,8 +85,8 @@ it.each(['mock', undefined])('Mock (%s): completes selection, kitchen, confirmat
   vi.stubGlobal('fetch', fetcher)
   const App = (await import('./App')).default
   render(<App />)
-  await screen.findByText(/MOCK API/)
+  await screen.findByText(/演示模式/)
   await flow(recipeCatalog.slice(0, 3).map(recipe => recipe.name))
-  for (const recipe of recipeCatalog.slice(0, 3)) expect(screen.getByRole('button', { name: new RegExp(`${recipe.recipe_id}_prepare`) })).toBeInTheDocument()
+  for (const recipe of recipeCatalog.slice(0, 3)) expect(screen.getAllByRole('button', { name: new RegExp(`${recipe.name}备料`) })[0]).toBeInTheDocument()
   expect(fetcher).not.toHaveBeenCalled()
 })

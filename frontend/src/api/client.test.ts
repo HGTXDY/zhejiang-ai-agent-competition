@@ -21,12 +21,14 @@ const current: DashboardSchedule = {
       locked: false,
       notification_points: [],
       action: '切菜',
+      dish_name: '测试菜',
     },
   ],
   validation: { valid: true, errors: [] },
   timings_ms: { parse: 0, validation: 0, solve: 0, notification: 0, total: 0 },
   notifications: [],
   resources: [{ id: 'stove_1', label: '灶具 · 01', tone: 'gold' }],
+  target_time: '12:30',
 }
 
 const event: ReplanEvent = {
@@ -45,12 +47,14 @@ describe('toReplanEnvelope', () => {
     const envelope = toReplanEnvelope(event, scheduleRequest, current)
     const currentSchedule = envelope.current_schedule as Record<string, unknown>
     expect(currentSchedule).not.toHaveProperty('resources')
+    expect(currentSchedule).not.toHaveProperty('target_time')
   })
 
-  it('strips the UI-only action field from every task', () => {
+  it('strips the UI-only action and dish name fields from every task', () => {
     const envelope = toReplanEnvelope(event, scheduleRequest, current)
     const currentSchedule = envelope.current_schedule as { tasks: Array<Record<string, unknown>> }
     expect(currentSchedule.tasks[0]).not.toHaveProperty('action')
+    expect(currentSchedule.tasks[0]).not.toHaveProperty('dish_name')
   })
 
   it('keeps the standard V1 ScheduleResponse fields', () => {
