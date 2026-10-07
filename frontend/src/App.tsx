@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import ExecutionDashboard from './components/ExecutionDashboard'
 import ModelSettingsDialog from './components/ModelSettingsDialog'
+import PlanningModeChooser from './components/PlanningModeChooser'
+import AgentPlanner from './components/AgentPlanner'
 import { api, apiMode } from './api/client'
 import { recipeCatalog as mockCatalog } from './mock/recipes'
 import { createMockSchedule, validateProductRequest } from './mock/product'
@@ -12,6 +14,7 @@ import { apiModeLabel, formatDevice, formatDuration, formatMode } from './lib/pr
 import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
+type PlanningMode = 'choose' | 'agent' | 'manual'
 const productSteps: { key: ProductStep; number: string; label: string }[] = [
   { key: 'recipes', number: '01', label: '选择菜谱' }, { key: 'kitchen', number: '02', label: '厨房条件' },
   { key: 'confirm', number: '03', label: '确认步骤' }, { key: 'result', number: '04', label: '开始做饭' },
@@ -31,6 +34,7 @@ export default function App() {
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
   const [modelBusy, setModelBusy] = useState(false)
   const [step, setStep] = useState<ProductStep>('recipes')
+  const [planningMode, setPlanningMode] = useState<PlanningMode>('choose')
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [kitchen, setKitchen] = useState(defaultKitchen)
@@ -67,6 +71,19 @@ export default function App() {
     try { await action() } catch (error) { setValidationErrors([productErrorMessage(error)]) } finally { setLoading(false) }
   }
   async function continueToKitchen() { await run(async () => { assertSelection(selectedIds); setStep('kitchen') }) }
+  async function confirmAgentPlan(ids: string[], agentKitchen: KitchenConfig) {
+    await run(async () => {
+      assertSelection(ids)
+      let results: ParseResult[] = []
+      if (isHttp) { await productApi.validateKitchen(agentKitchen); results = await productApi.parseSelection(ids, modelSettings.parser_provider) }
+      else {
+        const report = await validateProductRequest({ recipe_ids: ids, kitchen: agentKitchen })
+        if (!report.valid) throw new Error(report.errors.join('；'))
+        setWarnings(report.warnings)
+      }
+      setSelectedIds(ids); setKitchen(agentKitchen); setParsed(results); setConfirmed(false); setPlanningMode('manual'); setStep('confirm')
+    })
+  }
   async function continueToConfirm() {
     await run(async () => {
       assertSelection(selectedIds)
@@ -108,7 +125,7 @@ export default function App() {
   }
   function navigateTo(target: ProductStep) {
     if (loading || target === step) return
-    if (target === 'recipes') { setValidationErrors([]); setWarnings([]); setConfirmed(false); setStep('recipes'); return }
+    if (target === 'recipes') { setValidationErrors([]); setWarnings([]); setConfirmed(false); setPlanningMode('manual'); setStep('recipes'); return }
     if (target === 'kitchen') { void continueToKitchen(); return }
     if (target === 'confirm') { void continueToConfirm(); return }
     if (schedule) setStep('result'); else setValidationErrors(['请先确认菜谱步骤并生成做饭计划'])
@@ -117,7 +134,7 @@ export default function App() {
   if (step === 'result' && schedule) return <ExecutionDashboard
     initialSchedule={schedule}
     recipes={recipeCatalog}
-    onBackToPlanner={() => { setSchedule(null); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setStep('recipes') }}
+    onBackToPlanner={() => { setSchedule(null); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setPlanningMode('choose'); setStep('recipes') }}
   />
   return <main className="product-shell">
     <header className="product-topbar">
@@ -134,9 +151,11 @@ export default function App() {
       <div className="product-heading"><div><p className="eyebrow">今天的菜单</p><h1>选好菜，<span>准时开饭。</span></h1><p className="subtitle">选 3～5 道菜，告诉我们厨房条件，系统会安排先后顺序和并行步骤。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道已选</span></div></div>
       <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
-      {step === 'recipes' && <RecipeStep recipes={visibleRecipes} selected={selected} selectedIds={selectedIds} query={query} loading={loading || catalogLoading} onQuery={setQuery} onToggle={toggleRecipe} onNext={() => void continueToKitchen()} />}
-      {step === 'kitchen' && <KitchenStep kitchen={kitchen} selected={selected} loading={loading} onChange={setKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} />}
-      {step === 'confirm' && <ConfirmStep kitchen={kitchen} selected={selected} parsed={parsed} confirmed={confirmed} loading={loading} setConfirmed={setConfirmed} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} />}
+      {planningMode === 'choose' && <PlanningModeChooser onAgent={() => setPlanningMode('agent')} onManual={() => setPlanningMode('manual')} />}
+      {planningMode === 'agent' && <AgentPlanner catalog={recipeCatalog} defaultKitchen={kitchen} loading={loading} onBack={() => setPlanningMode('choose')} onConfirm={confirmAgentPlan} />}
+      {planningMode === 'manual' && step === 'recipes' && <RecipeStep recipes={visibleRecipes} selected={selected} selectedIds={selectedIds} query={query} loading={loading || catalogLoading} onQuery={setQuery} onToggle={toggleRecipe} onNext={() => void continueToKitchen()} />}
+      {planningMode === 'manual' && step === 'kitchen' && <KitchenStep kitchen={kitchen} selected={selected} loading={loading} onChange={setKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} />}
+      {planningMode === 'manual' && step === 'confirm' && <ConfirmStep kitchen={kitchen} selected={selected} parsed={parsed} confirmed={confirmed} loading={loading} setConfirmed={setConfirmed} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} />}
     </section>
     {modelSettingsOpen && <ModelSettingsDialog open settings={modelSettings} busy={modelBusy} onClose={() => setModelSettingsOpen(false)} onSave={updateModelSettings} onTest={testModelSettings} onReset={resetModelSettings} />}
   </main>

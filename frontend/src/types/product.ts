@@ -35,3 +35,29 @@ export interface ProductScheduleResult {
   schedule: DashboardSchedule
   validation: RecipeValidation
 }
+
+export interface AgentRecipeMatch { recipe_id: string; name: string }
+export interface AgentPlanDraft {
+  recipes: AgentRecipeMatch[]
+  target_time: string | null
+  operator_count: number | null
+  devices: Partial<Pick<KitchenConfig, 'stove_count' | 'steamer_count' | 'oven_count'>>
+}
+export interface AgentPlanResponse {
+  intent: 'create_schedule'
+  reply: string
+  draft: AgentPlanDraft
+  missing_fields: string[]
+  unmatched_recipe_names: string[]
+  ready_to_confirm: boolean
+  tool_trace: { name: string; status: 'completed' | 'waiting'; label: string }[]
+}
+export interface AgentCommandResponse {
+  intent: 'add_dish' | 'device_unavailable' | 'task_delayed' | 'task_completed' | 'task_started' | 'unknown'
+  reply: string
+  ready: boolean
+  recipe_id?: string | null
+  task_id?: string | null
+  device_id?: string | null
+  delay_sec?: number
+}

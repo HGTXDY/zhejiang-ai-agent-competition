@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { MetricCard } from './MetricCard'
 import { Timeline } from './Timeline'
 import { api, apiMode } from '../api/client'
+import { productApi } from '../api/product'
 import { classifyError } from '../lib/errors'
 import { deriveDashboardMetrics } from '../lib/metrics'
 import { apiModeLabel, formatResources } from '../lib/presentation'
@@ -44,6 +45,8 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule, 
   const [toast, setToast] = useState('计划已生成，可以开始做饭')
   const [fault, setFault] = useState<MockFault>('none')
   const [addDishOpen, setAddDishOpen] = useState(false)
+  const [command, setCommand] = useState('')
+  const [agentReply, setAgentReply] = useState('你也可以直接告诉我：排骨慢了十分钟、蒸箱坏了、鲈鱼已经蒸上了。')
   const selected = tasks.find(task => task.task_id === selectedId) ?? null
   const canStart = selected?.status === 'PENDING'
   const canComplete = selected?.status === 'RUNNING' || selected?.status === 'DELAYED'
@@ -62,11 +65,40 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule, 
   }, [providedSchedule])
 
   function pushNotification(notification: Notification) { setNotifications(current => [notification, ...current].slice(0, 5)); setToast(notification.action) }
-  async function updateSelected(next: 'RUNNING' | 'COMPLETED' | 'DELAYED' | 'EXCEPTION') {
-    if (!selected || selected.locked) { setToast('这一步已经锁定，不能直接修改'); return }
+  async function updateSelected(next: 'RUNNING' | 'COMPLETED' | 'DELAYED' | 'EXCEPTION', target = selected, options?: { delaySec?: number; deviceId?: string }) {
+    if (!target || target.locked) { setToast('这一步已经锁定，不能直接修改'); return }
     setLoading(true); setError(null)
-    try { const result = await api.postEvent(selected, next, schedule); const enriched = preservePresentation(result.schedule, schedule); setSchedule(enriched); setTasks(enriched.tasks); setDiffs(result.changes); result.notifications.forEach(pushNotification) }
+    try { const result = await api.postEvent(target, next, schedule, options); const enriched = preservePresentation(result.schedule, schedule); setSchedule(enriched); setTasks(enriched.tasks); setDiffs(result.changes); result.notifications.forEach(pushNotification) }
     catch (caught) { const message = classifyError(caught, '操作失败，请重试'); setError(message); setToast(message) } finally { setLoading(false) }
+  }
+  async function handleCommand() {
+    const message = command.trim(); if (!message || loading) return
+    setLoading(true); setError(null)
+    try {
+      let intent: { intent: string; reply: string; ready: boolean; task_id?: string | null; recipe_id?: string | null; device_id?: string | null; delay_sec?: number }
+      if (apiMode === 'HTTP API') intent = await productApi.interpretAgentCommand({ message, tasks, recipes })
+      else {
+        const mentionedTask = tasks.find(task => message.includes(task.action) || Boolean(task.dish_name && message.includes(task.dish_name))) ?? selected
+        const recipe = recipes.find(item => message.includes(item.name))
+        const minutes = Number(message.match(/(\d+)\s*分钟/)?.[1] ?? 1)
+        if (/加一道|加菜|再做/.test(message)) intent = { intent: 'add_dish', reply: recipe ? '已识别临时加菜。' : '请说出菜谱库中的菜名。', ready: Boolean(recipe), recipe_id: recipe?.recipe_id }
+        else if (/坏了|不可用|故障/.test(message)) { const device_id = message.includes('蒸箱') ? 'steamer_1' : message.includes('烤箱') ? 'oven_1' : message.includes('灶') ? 'stove_1' : null; intent = { intent: 'device_unavailable', reply: device_id ? '已识别设备异常，将重新安排。' : '请说明是哪台设备不可用。', ready: Boolean(device_id), device_id } }
+        else if (/慢了|延迟|晚了/.test(message)) intent = { intent: 'task_delayed', reply: mentionedTask ? '已识别步骤延迟，将重新计算。' : '请先选择发生延迟的步骤。', ready: Boolean(mentionedTask), task_id: mentionedTask?.task_id, delay_sec: minutes * 60 }
+        else if (/完成|做好了|已经好了/.test(message)) intent = { intent: 'task_completed', reply: mentionedTask ? '已识别步骤完成。' : '请先选择已经完成的步骤。', ready: Boolean(mentionedTask), task_id: mentionedTask?.task_id }
+        else if (/开始|做上了|蒸上了|烤上了/.test(message)) intent = { intent: 'task_started', reply: mentionedTask ? '已识别步骤开始。' : '请先选择已经开始的步骤。', ready: Boolean(mentionedTask), task_id: mentionedTask?.task_id }
+        else intent = { intent: 'unknown', reply: '我可以处理步骤开始、完成、延迟、设备故障或临时加菜。', ready: false }
+      }
+      setAgentReply(intent.reply); setCommand('')
+      if (!intent.ready) return
+      if (intent.intent === 'add_dish') { const recipe = recipes.find(item => item.recipe_id === intent.recipe_id); if (recipe) { setLoading(false); await handleAddDish(recipe) }; return }
+      const target = tasks.find(task => task.task_id === intent.task_id) ?? (intent.device_id ? tasks.find(task => task.assigned_resources.includes(intent.device_id!)) : selected)
+      if (!target) { setAgentReply('没有找到对应步骤，请先在下方点选一个步骤。'); return }
+      setLoading(false)
+      if (intent.intent === 'task_started') await updateSelected('RUNNING', target)
+      if (intent.intent === 'task_completed') await updateSelected('COMPLETED', target)
+      if (intent.intent === 'task_delayed') await updateSelected('DELAYED', target, { delaySec: intent.delay_sec })
+      if (intent.intent === 'device_unavailable') await updateSelected('EXCEPTION', target, { deviceId: intent.device_id ?? undefined })
+    } catch (caught) { const message = classifyError(caught, '指令处理失败，请重试'); setError(message); setAgentReply(message) } finally { setLoading(false) }
   }
   async function handleAddDish(recipe: RecipeSummary) {
     setLoading(true); setError(null)
@@ -79,6 +111,7 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule, 
     <div className="content">
       <section className="hero"><div><p className="eyebrow">今日烹饪安排</p><h1>按这个顺序做，<em>尽量一起出锅。</em></h1><p className="subtitle">{new Set(tasks.map(task => task.dish_id)).size} 道菜 · 单人操作 · 系统正在协调设备和时间</p></div><div className="hero-actions">{onBackToPlanner && <button className="secondary" disabled={loading} onClick={onBackToPlanner}>← 返回选菜</button>}<button className="secondary" disabled={loading} onClick={() => { setSchedule(seed); setTasks(seed.tasks); setNotifications([]); setDiffs([]); setToast('计划已恢复') }}>恢复计划</button><button className="primary" disabled={loading} onClick={() => setAddDishOpen(true)}>＋ 临时加菜</button></div></section>
       {error && <div className="error-banner">{error}</div>}
+      <section className="execution-agent"><div><span className="agent-orb">✦</span><div><b>告诉我现场发生了什么</b><p>{agentReply}</p></div></div><form onSubmit={event => { event.preventDefault(); void handleCommand() }}><input aria-label="输入执行中的自然语言指令" value={command} onChange={event => setCommand(event.target.value)} placeholder="例如：蒸箱坏了 / 排骨慢了 10 分钟" /><button disabled={!command.trim() || loading}>发送</button></form></section>
       <section className="metric-grid"><MetricCard label="完成进度" value={`${derived.progress}%`} hint={`${derived.completed} / ${derived.total} 步已完成`} accent="orange" /><MetricCard label="预计完成" value={derived.estimatedFinish} hint={derived.delayHint} accent="cyan" /><MetricCard label="出锅间隔" value={derived.finishSpread} hint="目标不超过 5 分钟" accent="violet" /><MetricCard label="节省时间" value={derived.compression} hint="相较逐道完成" accent="slate" /><MetricCard label="计划检查" value={derived.conflicts} hint="设备、先后顺序、人工" accent="green" /></section>
       <section className="toolbar"><div className="filter-group"><span>查看</span><select value={resourceFilter} onChange={event => setResourceFilter(event.target.value)}><option value="all">全部设备</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label.split(' · ')[0]}</option>)}</select><span>进度</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}><option value="ALL">全部步骤</option>{Object.entries(statusLabel).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>{apiMode === 'MOCK API' && <div className="filter-group drill"><span>演示情况</span><select aria-label="故障演练" value={fault} onChange={event => { const next = event.target.value as MockFault; setFault(next); setMockFault(next) }}><option value="none">正常运行</option><option value="infeasible">计划冲突</option><option value="timeout">计算超时</option><option value="network">连接中断</option></select></div>}<span className="toolbar-note">{apiModeLabel(apiMode)}</span></section>
       <Timeline tasks={tasks} resources={resources} selectedId={selectedId} resourceFilter={resourceFilter} targetTime={schedule.target_time} onSelect={task => setSelectedId(task.task_id)} />

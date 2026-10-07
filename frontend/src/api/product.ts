@@ -1,6 +1,6 @@
 import profiles from './device-profiles.json'
 import type { DashboardSchedule, ScheduleResponse, ValidationError } from '../types/contracts'
-import type { KitchenConfig, RecipeSummary } from '../types/product'
+import type { AgentCommandResponse, AgentPlanDraft, AgentPlanResponse, KitchenConfig, RecipeSummary } from '../types/product'
 
 export interface Recipe {
   schema_version: '1.0'; recipe_id: string; name: string; ingredients: string[]; steps_text: string[]; source?: string
@@ -70,6 +70,12 @@ export class ProductApi {
       if (!response.ok) throw new ProductApiError(body.error?.message ?? body.detail ?? `请求失败（${response.status}）`, response.status, body.error?.code ?? 'HTTP_ERROR', body.error?.details ?? [])
       return body as T
     } finally { clearTimeout(timeout) }
+  }
+  interpretAgentMessage(message: string, context?: AgentPlanDraft) {
+    return this.request<AgentPlanResponse>('/agent/plan', { message, context })
+  }
+  interpretAgentCommand(payload: { message: string; tasks: unknown[]; recipes: RecipeSummary[] }) {
+    return this.request<AgentCommandResponse>('/agent/command', payload)
   }
   async listRecipes(): Promise<RecipeSummary[]> {
     const result = await this.request<{ recipes: { recipe_id: string; name: string; step_count: number; ingredient_count: number }[] }>('/recipes')

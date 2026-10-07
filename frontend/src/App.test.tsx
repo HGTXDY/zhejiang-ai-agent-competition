@@ -12,6 +12,8 @@ const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules() })
 
 async function flow(names: string[]) {
+  const manual = screen.queryByRole('button', { name: /手动精确配置/ })
+  if (manual) fireEvent.click(manual)
   for (const name of names) fireEvent.click(await screen.findByRole('button', { name: new RegExp(name) }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：配置厨房/ }))
   await screen.findByText('告诉我你的厨房现在有什么')
@@ -29,6 +31,7 @@ it('keeps primary and step navigation actionable with clear validation feedback'
   render(<App />)
   await screen.findByText(/演示模式/)
 
+  fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
   const next = screen.getByRole('button', { name: /下一步：配置厨房/ })
   expect(next).toBeEnabled()
   fireEvent.click(next)
@@ -89,4 +92,23 @@ it.each(['mock', undefined])('Mock (%s): completes selection, kitchen, confirmat
   await flow(recipeCatalog.slice(0, 3).map(recipe => recipe.name))
   for (const recipe of recipeCatalog.slice(0, 3)) expect(screen.getAllByRole('button', { name: new RegExp(`${recipe.name}备料`) })[0]).toBeInTheDocument()
   expect(fetcher).not.toHaveBeenCalled()
+})
+
+
+it('offers an Agent conversation that asks for missing information and reaches confirmation', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
+  expect(screen.getByText('说完需求，我来安排')).toBeInTheDocument()
+  const input = screen.getByLabelText('告诉智能助手你的做饭需求')
+  fireEvent.change(input, { target: { value: '想做苹果芒果派、香烤排骨和麻辣对虾' } })
+  fireEvent.click(screen.getByRole('button', { name: '发送 ↑' }))
+  expect(await screen.findByText(/希望几点开饭/)).toBeInTheDocument()
+  fireEvent.change(input, { target: { value: '今晚六点半，一个人，一个灶、一个蒸箱和一个烤箱' } })
+  fireEvent.click(screen.getByRole('button', { name: '发送 ↑' }))
+  const confirm = await screen.findByRole('button', { name: /确认并生成计划/ })
+  expect(confirm).toBeEnabled()
+  fireEvent.click(confirm)
+  expect(await screen.findByText('确认菜谱解析结果')).toBeInTheDocument()
 })

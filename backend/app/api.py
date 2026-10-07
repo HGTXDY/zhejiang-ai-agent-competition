@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+from app.agent import interpret_command, interpret_plan
 from app.catalog import get_recipe_payload, list_recipe_summaries
 from app.device_check import validate_device_config
 from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
@@ -231,6 +232,14 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
     @app.delete("/settings/model")
     def reset_model_settings() -> dict[str, Any]:
         return model_config.reset()
+
+    @app.post("/agent/plan")
+    def agent_plan(payload: dict[str, Any]) -> dict[str, Any]:
+        return interpret_plan(payload)
+
+    @app.post("/agent/command")
+    def agent_command(payload: dict[str, Any]) -> dict[str, Any]:
+        return interpret_command(payload)
 
     @app.get("/recipes")
     def list_recipes(limit: int | None = None, q: str | None = None) -> dict[str, Any]:
