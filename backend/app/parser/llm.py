@@ -38,6 +38,19 @@ DEVICE_TYPES = {
     "water_purifier",
 }
 
+# These are the only capability modes exposed by the competition device contract.
+# The model may suggest a natural-language mode, but unsupported values must not
+# leak into the scheduler; the deterministic baseline remains authoritative.
+DEVICE_MODES = {
+    "range_hood": {"high", "low"},
+    "stove": {"boil", "high_heat", "medium_heat", "low_heat", "pan_fry", "deep_fry", "stew", "stir_fry", "simmer"},
+    "steamer": {"gentle_steam", "defat_steam", "multi_layer_steam", "normal_steam"},
+    "oven": {"air_fry", "upper_lower_heat", "full_grill", "convection", "top_heat", "humid_bake", "circulating", "defat_roast", "dehydrate", "proof", "bake"},
+    "refrigerator": {"thaw", "freeze", "chill"},
+    "dishwasher": {"baby_care", "deep_clean", "daily"},
+    "water_purifier": {"coffee", "instant_heat"},
+}
+
 _MIN_TEMPERATURE_C = -50
 _MAX_TEMPERATURE_C = 500
 _MAX_DURATION_SEC = 86400
@@ -219,21 +232,45 @@ class LLMParserAdapter:
         field_status = dict(baseline.get("field_status", {}))
 
         device_type = llm.get("device_type")
+        baseline_requirement = baseline.get("device_requirement") or {}
         if device_type in DEVICE_TYPES:
-            requirement = dict(baseline.get("device_requirement") or {})
-            requirement["device_type"] = device_type
+            # The deterministic parser is authoritative for an already
+            # identified device: a model can enrich a missing requirement, but
+            # cannot silently turn a steamer step into an oven step. This keeps
+            # recipe semantics and physical-capability checks aligned.
+            if baseline_requirement and baseline_requirement.get("device_type") != device_type:
+                requirement = dict(baseline_requirement)
+                field_status["device_type"] = "inferred"
+            else:
+                requirement = dict(baseline_requirement)
+                requirement["device_type"] = device_type
+                field_status["device_type"] = "provided"
             # A device inferred only by the LLM has no deterministic
             # requirement to inherit. Keep the merged object schema-valid and
             # schedulable by using the V1 single-capacity default.
             requirement.setdefault("capacity_units", 1)
-            field_status["device_type"] = "provided"
+            # A model-changed device type may inherit a mode from the
+            # deterministic baseline that is valid only for the old type.
+            # Drop that stale mode before considering the model's suggestion.
+            if requirement.get("mode") not in DEVICE_MODES.get(requirement["device_type"], set()):
+                requirement.pop("mode", None)
             task["device_requirement"] = requirement
 
         mode = llm.get("mode")
         requirement = task.get("device_requirement")
-        if requirement is not None and isinstance(mode, str) and mode.strip():
-            requirement["mode"] = mode.strip()
+        normalized_mode = mode.strip() if isinstance(mode, str) else ""
+        device_type_for_mode = requirement.get("device_type") if requirement else None
+        if (
+            requirement is not None
+            and normalized_mode
+            and normalized_mode in DEVICE_MODES.get(device_type_for_mode, set())
+        ):
+            requirement["mode"] = normalized_mode
             field_status["device_mode"] = "provided"
+        elif requirement is not None and normalized_mode:
+            # Keep the deterministic mode rather than allowing an unsupported
+            # model-generated value such as ``roast`` to reach CP-SAT.
+            field_status["device_mode"] = "inferred"
 
         temperature = _coerce_temperature(llm.get("temperature_c"))
         if requirement is not None and temperature is not None:

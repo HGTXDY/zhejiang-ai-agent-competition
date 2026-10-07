@@ -156,6 +156,42 @@ def _schedule_parsed_tasks(tasks):
     )
 
 
+def test_unsupported_llm_device_mode_keeps_deterministic_baseline():
+    reply = json.dumps([
+        {
+            "source_step_index": 0,
+            "device_type": "oven",
+            "mode": "roast",
+            "temperature_c": 180,
+            "duration_sec": 900,
+        }
+    ])
+    result = _parse(reply, steps=["放入烤箱180度烘烤15分钟。"])
+    task = result.tasks[0]
+
+    assert task["device_requirement"]["mode"] == "bake"
+    assert task["field_status"]["device_mode"] == "inferred"
+    assert _schedule_parsed_tasks(result.tasks)["solver"]["status"] in {"OPTIMAL", "FEASIBLE"}
+
+
+
+def test_model_cannot_change_deterministic_device_type():
+    reply = json.dumps([
+        {
+            "source_step_index": 0,
+            "device_type": "oven",
+            "mode": "normal_steam",
+            "duration_sec": 480,
+        }
+    ])
+    result = _parse(reply, steps=["放入蒸箱，普通蒸100度8分钟。"])
+    requirement = result.tasks[0]["device_requirement"]
+
+    assert requirement["device_type"] == "steamer"
+    assert requirement["mode"] == "normal_steam"
+    assert result.tasks[0]["field_status"]["device_type"] == "inferred"
+
+
 def test_llm_added_device_gets_capacity_and_schedules_directly():
     reply = json.dumps(
         [
