@@ -25,6 +25,19 @@ async function flow(names: string[]) {
 }
 
 
+it('opens the full manual recipe catalog when the first step is clicked from the mode chooser', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText(/演示模式/)
+
+  const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
+  fireEvent.click(steps.getByRole('button', { name: /选择菜谱/ }))
+  expect(await screen.findByText('选择今天要做的菜')).toBeInTheDocument()
+  expect(screen.getAllByText((_, element) => element?.textContent?.includes(`已接入 ${recipeCatalog.length} 道官方菜谱`) ?? false).length).toBeGreaterThan(0)
+  expect(screen.getByRole('button', { name: new RegExp(recipeCatalog[0].name) })).toBeInTheDocument()
+})
+
 it('keeps primary and step navigation actionable with clear validation feedback', async () => {
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
