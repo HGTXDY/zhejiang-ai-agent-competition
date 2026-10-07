@@ -15,7 +15,9 @@ interface Props {
 interface DishLane { id: string; label: string; tasks: DashboardTask[]; subrows: DashboardTask[][] }
 
 const MIN_WINDOW = 900
-const STEP = 300
+const WINDOW_UNIT = 300
+const TICK_STEPS = [300, 600, 900, 1800, 3600, 7200, 10800]
+const MAX_TICKS = 9
 const statusLabel: Record<DashboardTask['status'], string> = { PENDING: '待执行', LOCKED: '已锁定', RUNNING: '执行中', DELAYED: '已延迟', COMPLETED: '已完成', EXCEPTION: '异常', CANCELLED: '已取消' }
 const knownDishLabels: Record<string, string> = {
   braised_ribs: '红烧排骨', steamed_fish: '清蒸鲈鱼', baked_wings: '烤鸡翅', garlic_broccoli: '蒜蓉西兰花', mapo_tofu: '麻婆豆腐',
@@ -67,7 +69,7 @@ function TaskBlock({ task, dishName, tone, selected, windowSize, planEnd, target
       type="button"
       aria-label={aria}
       className={`task-bar ${tone} ${task.status.toLowerCase()} ${task.locked ? 'locked' : ''} ${selected ? 'selected' : ''}`}
-      style={{ left: `${task.start_offset_sec / windowSize * 100}%`, width: `${Math.max((task.end_offset_sec - task.start_offset_sec) / windowSize * 100, 2.4)}%` }}
+      style={{ left: `${task.start_offset_sec / windowSize * 100}%`, width: `${Math.max((task.end_offset_sec - task.start_offset_sec) / windowSize * 100, 1.15)}%` }}
       onClick={onSelect}
       {...getReferenceProps()}
     >
@@ -85,8 +87,13 @@ function TaskBlock({ task, dishName, tone, selected, windowSize, planEnd, target
 export function Timeline({ tasks, resources, selectedId, resourceFilter, targetTime, onSelect }: Props) {
   const filteredTasks = useMemo(() => resourceFilter === 'all' ? tasks : tasks.filter(task => task.assigned_resources.includes(resourceFilter)), [resourceFilter, tasks])
   const planEnd = useMemo(() => Math.max(0, ...tasks.map(task => task.end_offset_sec)), [tasks])
-  const windowSize = Math.max(MIN_WINDOW, Math.ceil(planEnd / STEP) * STEP)
-  const ticks = Array.from({ length: Math.floor(windowSize / STEP) + 1 }, (_, index) => index * STEP)
+  const windowSize = Math.max(MIN_WINDOW, Math.ceil(planEnd / WINDOW_UNIT) * WINDOW_UNIT)
+  // A scheduler axis should establish useful landmarks, not print a label for
+  // every tiny interval. Pick the coarsest readable step that keeps the axis
+  // to roughly 6–9 labels; short plans remain precise while long plans use
+  // 10/15/30/60-minute landmarks instead of becoming visual noise.
+  const tickStep = TICK_STEPS.find(step => windowSize / step <= MAX_TICKS) ?? TICK_STEPS[TICK_STEPS.length - 1]
+  const ticks = Array.from({ length: Math.floor(windowSize / tickStep) + 1 }, (_, index) => index * tickStep)
   const resourceTone = useMemo(() => new Map(resources.map(resource => [resource.id, resource.tone])), [resources])
   const lanes = useMemo<DishLane[]>(() => {
     const groups = new Map<string, DashboardTask[]>()

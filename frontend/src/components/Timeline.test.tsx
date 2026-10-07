@@ -33,6 +33,13 @@ describe('Timeline', () => {
     expect(screen.getByText('12:30')).toBeInTheDocument()
   })
 
+  it('uses readable adaptive landmarks instead of labeling every minute on long plans', () => {
+    const longTasks = [{ ...tasks[0], end_offset_sec: 4 * 60 * 60 }]
+    const { container } = renderTimeline({ tasks: longTasks })
+    expect(container.querySelectorAll('.axis > span').length).toBeLessThanOrEqual(9)
+    expect(screen.getByText('08:30')).toBeInTheDocument()
+  })
+
   it('renders an empty state when there are no tasks', () => {
     renderTimeline({ tasks: [] })
     expect(screen.getByText('暂无可展示的排程')).toBeInTheDocument()

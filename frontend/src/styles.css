@@ -727,7 +727,7 @@ body { min-height: 100%; }
 .axis span:first-child { transform: none; }
 .axis span:last-of-type { transform: translateX(-100%); }
 .task-slot { position: absolute; inset-inline: 0; height: 42px; pointer-events: none; }
-.task-slot .task-bar { top: 0; height: 40px; min-width: 28px; pointer-events: auto; transition: transform .16s ease, filter .16s ease, box-shadow .16s ease; }
+.task-slot .task-bar { top: 0; height: 40px; min-width: 22px; pointer-events: auto; transition: transform .16s ease, filter .16s ease, box-shadow .16s ease; }
 .task-slot .task-bar:hover,
 .task-slot .task-bar:focus-visible { z-index: 5; transform: translateY(-2px); filter: saturate(1.08); box-shadow: 0 9px 22px rgba(23,32,28,.24); }
 .task-slot .task-bar:focus-visible { outline: 3px solid rgba(232,111,60,.34); outline-offset: 2px; }
