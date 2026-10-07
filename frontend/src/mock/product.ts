@@ -29,20 +29,34 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
     ...Array.from({ length: request.kitchen.oven_count }, (_, index) => ({ id: `oven_${index + 1}`, label: `烤箱 · ${String(index + 1).padStart(2, '0')}`, tone: 'slate' as const })),
   ]
   const cookingResources = resources.filter(resource => !resource.id.startsWith('operator_'))
-  const tasks: DashboardTask[] = selected.flatMap((recipe, index) => {
-    const base = index * 480
+  // A tiny deterministic list scheduler for demo mode. Preparation occupies one
+  // operator, while unattended cooking only occupies its device, so work on a
+  // second dish can begin as soon as an operator is free. The old demo used
+  // `index * 480`, which serialized every dish and visually contradicted the
+  // real CP-SAT scheduler even when different devices were available.
+  const operatorReady = Array.from({ length: request.kitchen.operator_count }, () => 0)
+  const deviceReady = new Map(cookingResources.map(resource => [resource.id, 0]))
+  const tasks: DashboardTask[] = []
+  selected.forEach((recipe, index) => {
+    const operatorIndex = operatorReady.indexOf(Math.min(...operatorReady))
+    const prepareStart = operatorReady[operatorIndex]
+    const prepareEnd = prepareStart + 150
+    operatorReady[operatorIndex] = prepareEnd
     const resource = cookingResources[index % cookingResources.length]
-    return [
-      { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}备料`, start_offset_sec: base, end_offset_sec: base + 150, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}烹饪`, start_offset_sec: base + 150, end_offset_sec: base + 480, assigned_resources: [resource.id], status: 'PENDING', locked: false, notification_points: [] },
-    ]
+    const cookStart = Math.max(prepareEnd, deviceReady.get(resource.id) ?? 0)
+    const cookEnd = cookStart + 330
+    deviceReady.set(resource.id, cookEnd)
+    tasks.push(
+      { task_id: `${recipe.recipe_id}_prepare`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}备料`, start_offset_sec: prepareStart, end_offset_sec: prepareEnd, assigned_resources: [`operator_${operatorIndex + 1}`], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${recipe.recipe_id}_cook`, dish_id: recipe.recipe_id, dish_name: recipe.name, action: `${recipe.name}烹饪`, start_offset_sec: cookStart, end_offset_sec: cookEnd, assigned_resources: [resource.id], status: 'PENDING', locked: false, notification_points: [] },
+    )
   })
   const schedule: DashboardSchedule = {
     ...initialSchedule,
     request_id: `cookflow_${Date.now()}`,
     schedule_id: `schedule_${Date.now()}`,
     solver: { ...initialSchedule.solver, duration_ms: 38, objective_value: tasks.length * 480 },
-    metrics: { ...initialSchedule.metrics, makespan_sec: tasks.length ? Math.max(...tasks.map(task => task.end_offset_sec)) : 0, target_delay_sec: 0 },
+    metrics: { ...initialSchedule.metrics, makespan_sec: tasks.length ? Math.max(...tasks.map(task => task.end_offset_sec)) : 0, finish_spread_sec: tasks.length ? Math.max(...selected.map(recipe => tasks.find(task => task.dish_id === recipe.recipe_id && task.task_id.endsWith('_cook'))!.end_offset_sec)) - Math.min(...selected.map(recipe => tasks.find(task => task.dish_id === recipe.recipe_id && task.task_id.endsWith('_cook'))!.end_offset_sec)) : 0, serial_baseline_sec: selected.length * 480, makespan_compression_ratio: tasks.length ? Math.max(...tasks.map(task => task.end_offset_sec)) / (selected.length * 480) : 1, target_delay_sec: 0 },
     tasks,
     resources,
     target_time: request.kitchen.target_time,
