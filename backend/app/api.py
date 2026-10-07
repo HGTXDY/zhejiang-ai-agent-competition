@@ -195,7 +195,7 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
     )
     configured_origins = os.getenv(
         "COOKFLOW_CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5180,http://127.0.0.1:5180",
     )
     app.add_middleware(
         CORSMiddleware,
@@ -235,7 +235,12 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
 
     @app.post("/agent/plan")
     def agent_plan(payload: dict[str, Any]) -> dict[str, Any]:
-        return interpret_plan(payload)
+        try:
+            return interpret_plan(payload, client=model_config.active_client())
+        except ParsedTaskError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.post("/agent/command")
     def agent_command(payload: dict[str, Any]) -> dict[str, Any]:

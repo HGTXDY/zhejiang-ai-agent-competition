@@ -82,20 +82,20 @@ export default function ModelSettingsDialog({ open, settings, busy, onClose, onS
   return <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section className="model-dialog" role="dialog" aria-modal="true" aria-labelledby="model-settings-title" aria-describedby="model-settings-description">
       <div className="dialog-heading">
-        <div><p className="eyebrow">智能解析设置</p><h2 id="model-settings-title">菜谱理解设置</h2><p id="model-settings-description">选择系统理解菜谱文字的方式。高级模式需要连接你自己的智能服务。</p></div>
+        <div><p className="eyebrow">智能解析设置</p><h2 id="model-settings-title">菜谱理解设置</h2><p id="model-settings-description">配置智能对话与菜谱解析使用的大模型服务。智能模式需要连接你自己的兼容服务。</p></div>
         <button ref={closeButtonRef} type="button" className="icon-button" aria-label="关闭模型设置" disabled={busy} onClick={onClose}>×</button>
       </div>
       <div className="dialog-scroll-area">
-        <div className="model-safety-note"><span aria-hidden="true">✓</span><div><b>系统如何保证计划可靠</b><p>智能服务只负责读懂菜谱；设备冲突、先后顺序和时间安排仍由本地规则严格检查。</p></div></div>
+        <div className="model-safety-note"><span aria-hidden="true">✓</span><div><b>系统如何保证计划可靠</b><p>智能服务负责理解用户需求和读懂菜谱；菜谱真实性、设备冲突、先后顺序和时间安排仍由本地规则严格检查。</p></div></div>
         <fieldset className="provider-options" disabled={busy}>
-          <legend>菜谱理解方式</legend>
+          <legend>智能理解方式</legend>
           <label className={provider === 'deterministic' ? 'selected' : ''}>
             <input type="radio" name="parser-provider" checked={provider === 'deterministic'} onChange={() => setProvider('deterministic')} />
-            <span><b>稳定模式</b><small>无需额外配置，适合直接体验和比赛演示</small></span>
+            <span><b>稳定模式</b><small>无需额外配置，仅支持手动流程与规则菜谱解析</small></span>
           </label>
           <label className={provider === 'llm' ? 'selected' : ''}>
             <input type="radio" name="parser-provider" checked={provider === 'llm'} onChange={() => setProvider('llm')} />
-            <span><b>智能模式</b><small>更灵活地理解自然语言菜谱，需要连接外部服务</small></span>
+            <span><b>智能模式</b><small>启用 Agent 对话与自然语言菜谱解析，需要连接外部服务</small></span>
           </label>
         </fieldset>
         <div className={`model-form ${provider === 'deterministic' ? 'muted' : ''}`} aria-disabled={provider === 'deterministic'}>

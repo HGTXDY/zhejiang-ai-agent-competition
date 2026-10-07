@@ -95,20 +95,13 @@ it.each(['mock', undefined])('Mock (%s): completes selection, kitchen, confirmat
 })
 
 
-it('offers an Agent conversation that asks for missing information and reaches confirmation', async () => {
+it('requires a configured model before enabling the Agent conversation', async () => {
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
   expect(screen.getByText('说完需求，我来安排')).toBeInTheDocument()
-  const input = screen.getByLabelText('告诉智能助手你的做饭需求')
-  fireEvent.change(input, { target: { value: '想做苹果芒果派、香烤排骨和麻辣对虾' } })
-  fireEvent.click(screen.getByRole('button', { name: '发送 ↑' }))
-  expect(await screen.findByText(/希望几点开饭/)).toBeInTheDocument()
-  fireEvent.change(input, { target: { value: '今晚六点半，一个人，一个灶、一个蒸箱和一个烤箱' } })
-  fireEvent.click(screen.getByRole('button', { name: '发送 ↑' }))
-  const confirm = await screen.findByRole('button', { name: /确认并生成计划/ })
-  expect(confirm).toBeEnabled()
-  fireEvent.click(confirm)
-  expect(await screen.findByText('确认菜谱解析结果')).toBeInTheDocument()
+  expect(screen.getByText('如果使用此功能，请先到右上角的设置配置大模型哦！')).toBeInTheDocument()
+  expect(screen.getByLabelText('告诉智能助手你的做饭需求')).toBeDisabled()
+  expect(screen.getByRole('button', { name: '发送 ↑' })).toBeDisabled()
 })

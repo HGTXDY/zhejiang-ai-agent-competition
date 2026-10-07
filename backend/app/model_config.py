@@ -69,7 +69,7 @@ class ModelConfigService:
                 "api_key_masked": mask_api_key(self._api_key) if self._api_key else None,
                 "source": self._source,
                 "notes": [
-                    "AI 仅负责把菜谱文本结构化；Schema 校验、设备硬约束和 CP-SAT 排程仍由确定性链路执行。",
+                    "AI 负责理解规划对话和把菜谱文本结构化；菜谱库匹配、Schema 校验、设备硬约束和 CP-SAT 排程仍由确定性链路执行。",
                     "API Key 只保存在当前后端进程内，查询接口不会返回明文；正式部署可继续使用 MODEL_* 环境变量。",
                 ],
             }

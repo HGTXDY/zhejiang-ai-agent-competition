@@ -815,6 +815,17 @@ body { min-height: 100%; }
 .text-back { padding: 0; border: 0; color: var(--muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
 .agent-card-head > span { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 10px; font-weight: 800; }
 .agent-card-head i { width: 7px; height: 7px; border-radius: 50%; background: #55a47e; box-shadow: 0 0 0 4px rgba(85,164,126,.12); }
+.agent-model-notice { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin: 12px 14px 0; padding: 10px 12px; border: 1px solid #ead4b5; border-radius: 14px; color: #74451f; background: #fff8ed; }
+.agent-model-notice > span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; color: #fff; background: var(--orange); font-weight: 900; }
+.agent-model-notice div { min-width: 0; }
+.agent-model-notice b, .agent-model-notice small { display: block; line-height: 1.45; }
+.agent-model-notice b { font-size: 11px; }
+.agent-model-notice small { margin-top: 2px; color: #8a6749; font-size: 9px; }
+.agent-model-notice button { min-height: 30px; padding: 0 11px; border: 1px solid #d5b184; border-radius: 9px; color: #75461f; background: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
+.agent-model-notice.ready { border-color: #c9dfd2; color: var(--green); background: #f2faf5; }
+.agent-model-notice.ready > span { background: var(--green); }
+.agent-model-notice.ready small { color: #5d7769; }
+
 .agent-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; scrollbar-width: thin; }
 .agent-message { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: start; max-width: 88%; margin-bottom: 14px; }
 .agent-message > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: #fff; background: var(--green); font-size: 9px; font-weight: 800; }
@@ -870,3 +881,5 @@ body { min-height: 100%; }
   .execution-agent form { grid-template-columns: 1fr; }
   .execution-agent form button { width: 100%; }
 }
+
+.example-prompt:disabled, .agent-composer textarea:disabled { cursor: not-allowed; opacity: .55; }
