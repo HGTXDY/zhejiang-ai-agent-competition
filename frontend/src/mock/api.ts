@@ -60,8 +60,8 @@ export async function addDish(): Promise<{ tasks: DashboardTask[]; notification:
   await wait()
   return {
     tasks: [
-      { task_id: 'tofu_prepare', dish_id: 'mapo_tofu', action: '麻婆豆腐备料', start_offset_sec: 1260, end_offset_sec: 1380, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: 'tofu_stir', dish_id: 'mapo_tofu', action: '麻婆豆腐烹制', start_offset_sec: 1380, end_offset_sec: 1680, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: 'tofu_prepare', dish_id: 'mapo_tofu', dish_name: '麻婆豆腐', action: '麻婆豆腐备料', start_offset_sec: 1260, end_offset_sec: 1380, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: 'tofu_stir', dish_id: 'mapo_tofu', dish_name: '麻婆豆腐', action: '麻婆豆腐烹制', start_offset_sec: 1380, end_offset_sec: 1680, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
     ],
     notification: {
       notification_id: `dish-${Date.now()}`,

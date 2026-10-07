@@ -72,6 +72,21 @@ npm run dev
 
 前端当前提供产品主流程和排程可视化；接口适配支持 Mock 与 HTTP 模式，具体配置见 `frontend/README.md`。
 
+### 模型配置
+
+HTTP 模式下可点击页面右上角的“规则解析 / AI · 模型名”进入模型设置。系统支持 OpenAI-compatible Chat Completions 的 `Base URL + API Key + Model` 配置、连接测试和规则/AI 解析切换。API Key 不会通过查询接口返回，也不会写入浏览器存储；页面保存的配置仅在当前后端进程内生效。
+
+生产或比赛部署仍建议通过根目录 `.env` 注入：
+
+```bash
+MODEL_BASE_URL=https://api.openai.com/v1
+MODEL_API_KEY=...
+MODEL_NAME=gpt-4o-mini
+MODEL_PARSER_PROVIDER=deterministic  # 确认配置可用后可改为 llm
+```
+
+模型只参与菜谱语义结构化，输出仍须经过 Schema、业务规则、设备能力校验和 CP-SAT 调度。未配置模型时默认使用确定性规则解析，不影响完整演示链路。
+
 ### 交付检查
 
 在仓库根目录执行：

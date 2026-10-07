@@ -16,7 +16,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jsonschema import Draft202012Validator, FormatChecker
@@ -27,6 +27,7 @@ from app.device_check import validate_device_config
 from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
 from app.parser.deterministic import DeterministicParserAdapter
 from app.parser.llm import LLMParserAdapter
+from app.model_config import ModelConfigService
 from app.replan import ReplanError, apply_event_to_request, replan
 from app.scheduler import schedule
 from app.store import ScheduleStore, store
@@ -61,9 +62,15 @@ RECIPE_VALIDATOR = Draft202012Validator(
 )
 
 
-def _recipe_parser(*, strict: bool = False, provider: str = "deterministic") -> RecipeParser:
+def _recipe_parser(
+    *,
+    strict: bool = False,
+    provider: str = "deterministic",
+    model_config: ModelConfigService | None = None,
+) -> RecipeParser:
     if provider == "llm":
-        return RecipeParser(LLMParserAdapter(strict=strict), provider="llm")
+        client = model_config.active_client() if model_config is not None else None
+        return RecipeParser(LLMParserAdapter(client=client, strict=strict), provider="llm")
     return RecipeParser(DeterministicParserAdapter(strict=strict))
 
 
@@ -179,6 +186,7 @@ def _replan_event(store: ScheduleStore, schedule_id: str, event: dict[str, Any])
 
 def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
     registry = app_store or store
+    model_config = ModelConfigService()
     app = FastAPI(
         title="CookFlow Scheduling API",
         version="1.0",
@@ -192,13 +200,37 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in configured_origins.split(",") if origin.strip()],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "cookflow-scheduling-api", "version": "1.0"}
+
+    @app.get("/settings/model")
+    def get_model_settings() -> dict[str, Any]:
+        return model_config.public_settings()
+
+    @app.put("/settings/model")
+    def update_model_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return model_config.update(payload)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/settings/model/test")
+    def test_model_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return model_config.probe(payload)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except ParsedTaskError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    @app.delete("/settings/model")
+    def reset_model_settings() -> dict[str, Any]:
+        return model_config.reset()
 
     @app.get("/recipes")
     def list_recipes(limit: int | None = None, q: str | None = None) -> dict[str, Any]:
@@ -239,7 +271,9 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
                 ],
             )
         try:
-            result = _recipe_parser(strict=strict, provider=provider).parse(payload)
+            result = _recipe_parser(strict=strict, provider=provider, model_config=model_config).parse(payload)
+        except ValueError as error:
+            return _error_response(request_id, "PARSE_FAILED", str(error), [])
         except InputRecipeError as error:
             return _error_response(request_id, "INVALID_INPUT", str(error), [])
         except ParsedTaskError as error:

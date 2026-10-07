@@ -75,3 +75,76 @@ def test_parse_recipe_endpoint_strict_mode_blocks_unresolved_duration():
     response = client.post("/recipes/parse", json=payload, params={"strict": True})
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "PARSE_FAILED"
+
+
+def test_model_settings_mask_secret_and_drive_llm_parser(monkeypatch):
+    from app.api import create_app
+    from app.parser.llm import OpenAICompatClient
+
+    isolated = TestClient(create_app())
+    initial = isolated.get("/settings/model")
+    assert initial.status_code == 200
+    assert "api_key" not in initial.json()
+
+    saved = isolated.put(
+        "/settings/model",
+        json={
+            "parser_provider": "llm",
+            "base_url": "https://models.example.test/v1",
+            "model": "cook-model",
+            "api_key": "fake-key-for-mask-test",
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["parser_provider"] == "llm"
+    assert saved.json()["api_key_masked"].startswith("fake")
+    assert "fake-key-for-mask-test" not in saved.text
+
+    monkeypatch.setattr(
+        OpenAICompatClient,
+        "complete",
+        lambda self, system, user: '[{"source_step_index": 0, "duration_sec": 90}]',
+    )
+    parsed = isolated.post("/recipes/parse", params={"provider": "llm"}, json=RECIPE)
+    assert parsed.status_code == 200, parsed.text
+    assert parsed.json()["provider"] == "llm"
+
+
+def test_model_settings_require_complete_config_before_enabling_llm(monkeypatch):
+    from app.api import create_app
+
+    monkeypatch.delenv("MODEL_BASE_URL", raising=False)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    isolated = TestClient(create_app())
+    response = isolated.put("/settings/model", json={"parser_provider": "llm"})
+    assert response.status_code == 422
+    assert "Base URL" in response.json()["detail"]
+
+
+def test_model_settings_probe_does_not_echo_secret(monkeypatch):
+    from app.api import create_app
+    from app.parser.llm import OpenAICompatClient
+
+    monkeypatch.setattr(OpenAICompatClient, "complete", lambda self, system, user: "OK")
+    isolated = TestClient(create_app())
+    response = isolated.post(
+        "/settings/model/test",
+        json={"base_url": "https://models.example.test/v1", "model": "probe-model", "api_key": "fake-key-for-probe-test"},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert "fake-key-for-probe-test" not in response.text
+
+
+def test_model_settings_cors_preflight_allows_put():
+    response = client.options(
+        "/settings/model",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert "PUT" in response.headers["access-control-allow-methods"]
