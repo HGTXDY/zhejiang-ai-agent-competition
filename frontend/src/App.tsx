@@ -35,6 +35,7 @@ export default function App() {
   const [modelBusy, setModelBusy] = useState(false)
   const [step, setStep] = useState<ProductStep>('recipes')
   const [planningMode, setPlanningMode] = useState<PlanningMode>('choose')
+  const [manualFlow, setManualFlow] = useState(false)
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [kitchen, setKitchen] = useState(defaultKitchen)
@@ -42,6 +43,7 @@ export default function App() {
   const [warnings, setWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [schedule, setSchedule] = useState<DashboardSchedule | null>(null)
+  const [executionStarted, setExecutionStarted] = useState(false)
 
   useEffect(() => {
     if (!isHttp) { setRecipeCatalog(mockCatalog); setCatalogLoading(false); return }
@@ -62,7 +64,7 @@ export default function App() {
 
   function toggleRecipe(recipe: RecipeSummary) {
     if (loading) return
-    setValidationErrors([]); setParsed([]); setConfirmed(false)
+    setValidationErrors([]); setParsed([]); setConfirmed(false); setSchedule(null); setExecutionStarted(false)
     setSelectedIds(current => current.includes(recipe.recipe_id) ? current.filter(id => id !== recipe.recipe_id) : current.length < 5 ? [...current, recipe.recipe_id] : current)
   }
   async function run(action: () => Promise<void>) {
@@ -70,7 +72,7 @@ export default function App() {
     setLoading(true); setValidationErrors([]); setWarnings([])
     try { await action() } catch (error) { setValidationErrors([productErrorMessage(error)]) } finally { setLoading(false) }
   }
-  async function continueToKitchen() { await run(async () => { assertSelection(selectedIds); setStep('kitchen') }) }
+  async function continueToKitchen() { await run(async () => { assertSelection(selectedIds); setSchedule(null); setExecutionStarted(false); setConfirmed(false); setStep('kitchen') }) }
   async function confirmAgentPlan(ids: string[], agentKitchen: KitchenConfig) {
     await run(async () => {
       assertSelection(ids)
@@ -114,8 +116,14 @@ export default function App() {
         if (!result.validation.valid) throw new Error(result.validation.errors.join('；'))
         setSchedule({ ...result.schedule, target_time: kitchen.target_time, tasks: result.schedule.tasks.map(task => ({ ...task, dish_name: selected.find(recipe => recipe.recipe_id === task.dish_id)?.name })) })
       }
-      setStep('result')
+      setExecutionStarted(!manualFlow); setStep('result')
     })
+  }
+  function updateKitchen(next: KitchenConfig) {
+    setKitchen(next); setSchedule(null); setExecutionStarted(false); setConfirmed(false)
+  }
+  function reviseGeneratedPlan() {
+    setSchedule(null); setExecutionStarted(false); setConfirmed(false); setStep('kitchen')
   }
   async function updateModelSettings(payload: ModelSettingsUpdate) {
     setModelBusy(true)
@@ -131,12 +139,16 @@ export default function App() {
   }
   function navigateTo(target: ProductStep) {
     if (loading) return
+    if (step === 'result' && target !== 'result') {
+      setSchedule(null); setExecutionStarted(false); setConfirmed(false)
+      if (target === 'confirm') setStep('kitchen')
+    }
     // The first step initially shows the planning-mode chooser. Clicking the
     // stepper must still enter the manual recipe catalog even though `step`
     // is already `recipes`; otherwise the catalog stays hidden behind the
     // chooser and users cannot see the official dishes.
     if (target === 'recipes') {
-      setValidationErrors([]); setWarnings([]); setConfirmed(false); setPlanningMode('manual'); setStep('recipes'); return
+      setValidationErrors([]); setWarnings([]); setConfirmed(false); setSchedule(null); setExecutionStarted(false); setManualFlow(true); setPlanningMode('manual'); setStep('recipes'); return
     }
     if (target === step) return
     if (target === 'kitchen') { void continueToKitchen(); return }
@@ -144,10 +156,10 @@ export default function App() {
     if (schedule) setStep('result'); else setValidationErrors(['请先确认菜谱步骤并生成做饭计划'])
   }
 
-  if (step === 'result' && schedule) return <ExecutionDashboard
+  if (step === 'result' && schedule && executionStarted) return <ExecutionDashboard
     initialSchedule={schedule}
     recipes={recipeCatalog}
-    onBackToPlanner={() => { setSchedule(null); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setPlanningMode('choose'); setStep('recipes') }}
+    onBackToPlanner={() => { setSchedule(null); setExecutionStarted(false); setManualFlow(false); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setPlanningMode('choose'); setStep('recipes') }}
   />
   return <main className="product-shell">
     <header className="product-topbar">
@@ -164,11 +176,12 @@ export default function App() {
       <div className="product-heading"><div><p className="eyebrow">今天的菜单</p><h1>选好菜，<span>准时开饭。</span></h1><p className="subtitle">选 3～5 道菜，告诉我们厨房条件，系统会安排先后顺序和并行步骤。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道已选</span></div></div>
       <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
-      {planningMode === 'choose' && <PlanningModeChooser onAgent={() => setPlanningMode('agent')} onManual={() => setPlanningMode('manual')} />}
+      {planningMode === 'choose' && <PlanningModeChooser onAgent={() => { setManualFlow(false); setPlanningMode('agent') }} onManual={() => { setManualFlow(true); setPlanningMode('manual') }} />}
       {planningMode === 'agent' && <AgentPlanner catalog={recipeCatalog} defaultKitchen={kitchen} loading={loading} modelReady={isHttp && modelSettings.ready} offlineDemo={!isHttp} onOpenSettings={() => setModelSettingsOpen(true)} onBack={() => setPlanningMode('choose')} onConfirm={confirmAgentPlan} />}
       {planningMode === 'manual' && step === 'recipes' && <RecipeStep recipes={visibleRecipes} selected={selected} selectedIds={selectedIds} query={query} loading={loading || catalogLoading} onQuery={setQuery} onToggle={toggleRecipe} onNext={() => void continueToKitchen()} />}
-      {planningMode === 'manual' && step === 'kitchen' && <KitchenStep kitchen={kitchen} selected={selected} loading={loading} onChange={setKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} />}
+      {planningMode === 'manual' && step === 'kitchen' && <KitchenStep kitchen={kitchen} selected={selected} loading={loading} onChange={updateKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} />}
       {planningMode === 'manual' && step === 'confirm' && <ConfirmStep kitchen={kitchen} selected={selected} parsed={parsed} confirmed={confirmed} loading={loading} setConfirmed={setConfirmed} onBack={() => setStep('kitchen')} onSubmit={() => void createSchedule()} />}
+      {planningMode === 'manual' && manualFlow && step === 'result' && schedule && <section className="setup-grid"><div className="setup-main"><div className="compact-heading"><p className="eyebrow">排程成功</p><h2>排程已生成</h2><p className="setup-copy">做饭计划已经准备好。开始后将直接使用刚刚生成的这份排程。</p></div><div className="setup-actions"><button className="secondary" disabled={loading} onClick={reviseGeneratedPlan}>← 返回修改</button><button className="primary" disabled={loading} onClick={() => setExecutionStarted(true)}>开始做饭 →</button></div></div><aside className="selection-panel summary-panel"><p className="eyebrow">本次计划</p><h2>{selected.length} 道菜</h2><div className="summary-row"><span>目标开饭时间</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>排程编号</span><b>{schedule.schedule_id}</b></div></aside></section>}
     </section>
     {modelSettingsOpen && <ModelSettingsDialog open settings={modelSettings} busy={modelBusy} onClose={() => setModelSettingsOpen(false)} onSave={updateModelSettings} onTest={testModelSettings} onReset={resetModelSettings} />}
   </main>
@@ -176,7 +189,7 @@ export default function App() {
 
 function RecipeStep({ recipes, selected, selectedIds, query, loading, onQuery, onToggle, onNext }: { recipes: RecipeSummary[]; selected: RecipeSummary[]; selectedIds: string[]; query: string; loading: boolean; onQuery: (value: string) => void; onToggle: (recipe: RecipeSummary) => void; onNext: () => void }) {
   const isFiltering = query.trim().length > 0
-  return <section className="planner-grid"><div className="planner-main"><div className="section-toolbar"><div><p className="eyebrow">官方菜谱库</p><h2>选择今天要做的菜</h2><p>已接入 {recipes.length}{isFiltering ? ` 道匹配菜谱` : ' 道官方菜谱'}，搜索只用于快速检索，不影响菜谱库展示。</p></div><label className="search-box"><span aria-hidden="true">⌕</span><span className="sr-only">搜索菜谱</span><input value={query} onChange={event => onQuery(event.target.value)} placeholder="搜索菜名或做法" /></label></div>{recipes.length ? <div className="recipe-grid">{recipes.map(recipe => <button type="button" key={recipe.recipe_id} aria-pressed={selectedIds.includes(recipe.recipe_id)} className={`recipe-card ${selectedIds.includes(recipe.recipe_id) ? 'selected' : ''}`} onClick={() => onToggle(recipe)}><span className="recipe-check" aria-hidden="true">{selectedIds.includes(recipe.recipe_id) ? '✓' : '+'}</span><div><strong>{recipe.name}</strong><small>{recipe.step_count} 个步骤 · {recipe.tags.join(' · ')}</small><p>{recipe.preview}</p></div></button>)}</div> : <div className="recipe-empty"><strong>{isFiltering ? '没有找到匹配的菜谱' : '官方菜谱暂时没有加载出来'}</strong><span>{isFiltering ? '换一个菜名或做法试试。' : '请检查后端服务是否已启动，然后重新加载。'}</span>{isFiltering && <button type="button" className="text-button" onClick={() => onQuery('')}>清除搜索</button>}</div>}</div><aside className="selection-panel"><div className="selection-panel-heading"><div><p className="eyebrow">已选菜品</p><h2>本次菜单</h2></div><strong>{selected.length}<small>/ 5</small></strong></div>{selected.length ? <div className="selected-list">{selected.map((recipe, index) => <div className="selected-recipe" key={recipe.recipe_id}><span>{index + 1}</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div><button type="button" aria-label={`移除${recipe.name}`} onClick={() => onToggle(recipe)}>×</button></div>)}</div> : <div className="selection-empty"><span aria-hidden="true">＋</span><p>从左侧选择 3～5 道菜。</p></div>}<button type="button" className="primary wide" disabled={loading} onClick={onNext}>下一步：配置厨房 →</button><p className="selection-requirement">至少选择 3 道菜，最多 5 道</p></aside><div className="mobile-selection-dock"><div><strong>已选 {selected.length} 道</strong><span>至少 3 道，最多 5 道</span></div><button className="primary" disabled={loading} onClick={onNext}>配置厨房</button></div></section>
+  return <section className="planner-grid"><div className="planner-main"><div className="section-toolbar"><div><p className="eyebrow">官方菜谱库</p><h2>选择今天要做的菜</h2><p>已接入 {recipes.length}{isFiltering ? ` 道匹配菜谱` : ' 道官方菜谱'}，搜索只用于快速检索，不影响菜谱库展示。</p></div><label className="search-box"><span aria-hidden="true">⌕</span><span className="sr-only">搜索菜谱</span><input value={query} onChange={event => onQuery(event.target.value)} placeholder="搜索菜名或做法" /></label></div>{recipes.length ? <div className="recipe-grid">{recipes.map(recipe => <button type="button" key={recipe.recipe_id} aria-pressed={selectedIds.includes(recipe.recipe_id)} className={`recipe-card ${selectedIds.includes(recipe.recipe_id) ? 'selected' : ''}`} onClick={() => onToggle(recipe)}><span className="recipe-check" aria-hidden="true">{selectedIds.includes(recipe.recipe_id) ? '✓' : '+'}</span><div><strong>{recipe.name}</strong><small>{recipe.step_count} 个步骤 · {recipe.tags.join(' · ')}</small><p>{recipe.preview}</p></div></button>)}</div> : <div className="recipe-empty"><strong>{isFiltering ? '没有找到匹配的菜谱' : '官方菜谱暂时没有加载出来'}</strong><span>{isFiltering ? '换一个菜名或做法试试。' : '请检查后端服务是否已启动，然后重新加载。'}</span>{isFiltering && <button type="button" className="text-button" onClick={() => onQuery('')}>清除搜索</button>}</div>}</div><aside className="selection-panel"><div className="selection-panel-heading"><div><p className="eyebrow">已选菜品</p><h2>本次菜单</h2></div><strong>{selected.length}<small>/ 5</small></strong></div>{selected.length ? <div className="selected-list">{selected.map((recipe, index) => <div className="selected-recipe" key={recipe.recipe_id}><span>{index + 1}</span><div><b>{recipe.name}</b><small>{recipe.step_count} 个步骤</small></div><button type="button" aria-label={`移除${recipe.name}`} onClick={() => onToggle(recipe)}>×</button></div>)}</div> : <div className="selection-empty"><span aria-hidden="true">＋</span><p>从左侧选择 3～5 道菜。</p></div>}<button type="button" className="primary wide" disabled={loading || selected.length < 3} onClick={onNext}>下一步：配置厨房 →</button><p className="selection-requirement">至少选择 3 道菜，最多 5 道</p></aside><div className="mobile-selection-dock"><div><strong>已选 {selected.length} 道</strong><span>至少 3 道，最多 5 道</span></div><button className="primary" disabled={loading || selected.length < 3} onClick={onNext}>配置厨房</button></div></section>
 }
 
 function KitchenStep({ kitchen, selected, loading, onChange, onBack, onNext }: { kitchen: KitchenConfig; selected: RecipeSummary[]; loading: boolean; onChange: (next: KitchenConfig) => void; onBack: () => void; onNext: () => void }) {
@@ -197,5 +210,5 @@ function TaskSummary({ task }: { task: ParsedTask }) {
 }
 
 function ConfirmStep({ kitchen, selected, onBack, onSubmit, loading, parsed, confirmed, setConfirmed }: { parsed: ParseResult[]; confirmed: boolean; setConfirmed: (value: boolean) => void; kitchen: KitchenConfig; selected: RecipeSummary[]; onBack: () => void; onSubmit: () => void; loading: boolean }) {
-  return <section className="confirm-grid"><div className="confirm-main"><div className="compact-heading"><p className="eyebrow">菜谱步骤</p><h2>确认菜谱解析结果</h2><p className="setup-copy">请看看步骤、用时和设备是否符合你的实际做法。这里仅展示做饭时真正需要的信息。</p></div><div className="confirm-results">{selected.map(recipe => { const result = parsed.find(item => item.recipe_id === recipe.recipe_id); return <article className="parse-card" key={recipe.recipe_id}><div><strong>{recipe.name}</strong><span className="parse-status">{result ? '已理解' : '已检查'}</span></div>{result?.tasks?.length ? <ol className="friendly-task-list">{result.tasks.map(task => <TaskSummary key={task.task_id} task={task} />)}</ol> : <p>{recipe.preview}</p>}</article> })}</div></div><aside className="selection-panel summary-panel"><p className="eyebrow">开饭计划</p><h2>准备安排时间</h2><div className="summary-row"><span>开饭时间</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>做饭人数</span><b>{kitchen.operator_count} 人</b></div><div className="summary-row"><span>主要设备</span><b>{kitchen.stove_count} 个灶眼 · {kitchen.steamer_count} 台蒸箱 · {kitchen.oven_count} 台烤箱</b></div><div className="setup-actions summary-actions"><button className="secondary" disabled={loading} onClick={onBack}>← 返回配置</button><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />以上步骤符合实际做法</label><button className="primary wide" disabled={loading || !confirmed} onClick={onSubmit}>{loading ? '正在安排…' : '生成初始排程 →'}</button></div></aside><div className="mobile-confirm-dock"><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />步骤符合实际做法</label><button className="primary" disabled={loading || !confirmed} onClick={onSubmit}>{loading ? '正在安排…' : '生成计划'}</button></div></section>
+  return <section className="confirm-grid"><div className="confirm-main"><div className="compact-heading"><p className="eyebrow">菜谱步骤</p><h2>确认菜谱解析结果</h2><p className="setup-copy">请看看步骤、用时和设备是否符合你的实际做法。这里仅展示做饭时真正需要的信息。</p></div><div className="confirm-results">{selected.map(recipe => { const result = parsed.find(item => item.recipe_id === recipe.recipe_id); return <article className="parse-card" key={recipe.recipe_id}><div><strong>{recipe.name}</strong><span className="parse-status">{result ? '已理解' : '已检查'}</span></div>{result?.tasks?.length ? <ol className="friendly-task-list">{result.tasks.map(task => <TaskSummary key={task.task_id} task={task} />)}</ol> : <p>{recipe.preview}</p>}</article> })}</div></div><aside className="selection-panel summary-panel"><p className="eyebrow">开饭计划</p><h2>准备安排时间</h2><div className="summary-row"><span>开饭时间</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>做饭人数</span><b>{kitchen.operator_count} 人</b></div><div className="summary-row"><span>厨房设备</span><b>{kitchen.stove_count} 个灶眼 · {kitchen.steamer_count} 台蒸箱 · {kitchen.oven_count} 台烤箱 · {kitchen.refrigerator_count ?? 0} 台冰箱 · {kitchen.dishwasher_count ?? 0} 台洗碗机 · {kitchen.range_hood_count ?? 0} 台烟机 · {kitchen.water_purifier_count ?? 0} 台净水机</b></div><div className="setup-actions summary-actions"><button className="secondary" disabled={loading} onClick={onBack}>← 返回配置</button><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />以上步骤符合实际做法</label><button className="primary wide" disabled={loading || !confirmed} onClick={onSubmit}>{loading ? '正在安排…' : '生成初始排程 →'}</button></div></aside><div className="mobile-confirm-dock"><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />步骤符合实际做法</label><button className="primary" disabled={loading || !confirmed} onClick={onSubmit}>{loading ? '正在安排…' : '生成计划'}</button></div></section>
 }
