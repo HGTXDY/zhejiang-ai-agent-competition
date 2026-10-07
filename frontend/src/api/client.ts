@@ -117,7 +117,7 @@ const mockApi: CookFlowApi = {
     }
   },
   addDish: async (current, recipe) => {
-    const result = await mockAddDish(recipe)
+    const result = await mockAddDish(current, recipe)
     return {
       schedule: { ...current, tasks: [...current.tasks, ...result.tasks] },
       changes: result.tasks.map(task => ({ task_id: task.task_id, action: task.action, type: 'ADDED' as const, detail: '临时加菜加入排程' })),

@@ -56,16 +56,21 @@ export async function postEvent(
   return { task: { ...task, status }, notification }
 }
 
-export async function addDish(recipe: RecipeSummary): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
+export async function addDish(current: DashboardSchedule, recipe: RecipeSummary): Promise<{ tasks: DashboardTask[]; notification: Notification }> {
   throwFault()
   await wait()
   const stamp = Date.now()
   const dishId = recipe.recipe_id
   const dishName = recipe.name
+  // The mock must preserve the same invariant as the live CP-SAT replan:
+  // adding a dish cannot place operator/stove work on top of existing work.
+  // Appending after the current makespan is deliberately conservative and
+  // avoids pretending that the demo has solved a new resource conflict.
+  const start = Math.max(0, ...current.tasks.map(task => task.end_offset_sec))
   return {
     tasks: [
-      { task_id: `${dishId}_prepare_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}备料`, start_offset_sec: 1260, end_offset_sec: 1380, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
-      { task_id: `${dishId}_cook_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}烹制`, start_offset_sec: 1380, end_offset_sec: 1680, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${dishId}_prepare_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}备料`, start_offset_sec: start, end_offset_sec: start + 120, assigned_resources: ['operator_1'], status: 'PENDING', locked: false, notification_points: [] },
+      { task_id: `${dishId}_cook_${stamp}`, dish_id: dishId, dish_name: dishName, action: `${dishName}烹制`, start_offset_sec: start + 120, end_offset_sec: start + 420, assigned_resources: ['stove_1', 'operator_1'], status: 'PENDING', locked: false, notification_points: [] },
     ],
     notification: {
       notification_id: `dish-${stamp}`, type: 'schedule_updated', level: 'info', trigger_offset_sec: 0, dish_id: dishId,

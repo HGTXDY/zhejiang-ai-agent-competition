@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import type { RecipeSummary } from '../types/product'
 
 interface DishPickerDialogProps {
@@ -21,18 +20,12 @@ export default function DishPickerDialog({ recipes, existingDishIds, loading = f
   const selected = recipes.find(recipe => recipe.recipe_id === selectedId)
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = previousOverflow }
-  }, [])
-
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !loading) onClose() }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [loading, onClose])
 
-  return createPortal(<div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !loading) onClose() }}>
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !loading) onClose() }}>
     <section className="model-dialog dish-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="dish-picker-title">
       <div className="dialog-heading dish-picker-header">
         <div><p className="eyebrow">调整当前排程</p><h2 id="dish-picker-title">临时加菜</h2><p>选一道菜加入现在的做饭安排，系统会尽量少打乱已排好的步骤。</p></div>
@@ -51,5 +44,5 @@ export default function DishPickerDialog({ recipes, existingDishIds, loading = f
       </div>
       <div className="dialog-actions dish-picker-actions"><button type="button" className="secondary" onClick={onClose} disabled={loading}>取消</button><button type="button" className="primary" disabled={!selected || loading} onClick={() => selected && onConfirm(selected)}>{loading ? '正在调整…' : '加入排程'}</button></div>
     </section>
-  </div>, document.body)
+  </div>
 }
