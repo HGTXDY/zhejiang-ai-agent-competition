@@ -42,6 +42,12 @@ def test_health_endpoint_allows_local_frontend_origin():
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
+def test_health_endpoint_allows_vite_fallback_port():
+    response = client.get("/health", headers={"Origin": "http://127.0.0.1:5181"})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5181"
+
+
 RECIPE = {
     "schema_version": "1.0",
     "recipe_id": "steamed_fish",

@@ -200,6 +200,13 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in configured_origins.split(",") if origin.strip()],
+        # Vite may move to the next free port when another dev server is
+        # already running (for example 5174 or 5181). Keep arbitrary remote
+        # origins disallowed, but allow local browser development on any
+        # localhost/loopback port so the UI does not fail with a misleading
+        # "load failed" message. Production deployments can still provide an
+        # explicit allow-list through COOKFLOW_CORS_ORIGINS.
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type"],
