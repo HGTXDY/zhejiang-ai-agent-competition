@@ -88,7 +88,13 @@ export default function App() {
     await run(async () => {
       assertSelection(selectedIds)
       let results: ParseResult[] = []
-      if (isHttp) { await productApi.validateKitchen(kitchen); results = await productApi.parseSelection(selectedIds, modelSettings.parser_provider) }
+      if (isHttp) {
+        await productApi.validateKitchen(kitchen)
+        // The fixed/manual flow is deterministic by design. The configured
+        // model belongs only to the conversational Agent path and must never
+        // make the third-step calculation depend on an external LLM.
+        results = await productApi.parseSelection(selectedIds, 'deterministic')
+      }
       else {
         const report = await validateProductRequest({ recipe_ids: selectedIds, kitchen })
         if (!report.valid) throw new Error(report.errors.join('；'))

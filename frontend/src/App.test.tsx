@@ -65,12 +65,14 @@ it('HTTP: real non-Demo selection flows into ExecutionDashboard and delayed repl
   vi.stubEnv('VITE_API_MODE', 'http')
   let initialRequest: any
   let replanEnvelope: any
+  const parseUrls: string[] = []
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url, 'http://test').pathname
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     if (path === '/recipes') return json({ recipes: ids.map((id, index) => ({ recipe_id: id, name: `真实菜${index}`, step_count: 1, ingredient_count: 1 })) })
+    if (path === '/settings/model') return json({ parser_provider: 'llm', configured: true, ready: true, base_url: 'https://models.example.test/v1', model: 'test-model', api_key_masked: 'sk-test', source: 'runtime', notes: [] })
     if (path.startsWith('/recipes/') && path !== '/recipes/parse') return json({ schema_version: '1.0', recipe_id: path.split('/').pop(), name: '真实菜', ingredients: ['食材'], steps_text: ['备料一分钟'] })
-    if (path === '/recipes/parse') return json({ schema_version: '1.0', recipe_id: body.recipe_id, provider: 'deterministic', tasks: tasks.filter(task => task.dish_id === body.recipe_id) })
+    if (path === '/recipes/parse') { parseUrls.push(url); return json({ schema_version: '1.0', recipe_id: body.recipe_id, provider: 'deterministic', tasks: tasks.filter(task => task.dish_id === body.recipe_id) }) }
     if (path === '/devices/validate') return json({ valid: true, errors: [] })
     if (path === '/schedules') { initialRequest = body; return json({ ...schedule, request_id: body.request_id }) }
     if (path === '/v1/replans') {
@@ -92,6 +94,8 @@ it('HTTP: real non-Demo selection flows into ExecutionDashboard and delayed repl
   expect(replanEnvelope.event.event_type).toBe('TASK_DELAYED')
   expect(replanEnvelope.current_schedule).not.toHaveProperty('resources')
   expect(fetcher.mock.calls.some(([url]) => url.includes('/demo/'))).toBe(false)
+  expect(parseUrls).toHaveLength(3)
+  expect(parseUrls.every(url => !url.includes('provider=llm'))).toBe(true)
   for (const endpoint of ['/recipes', '/recipes/parse', '/devices/validate', '/schedules', '/v1/replans']) expect(fetcher.mock.calls.some(([url]) => new URL(url).pathname === endpoint)).toBe(true)
 })
 
