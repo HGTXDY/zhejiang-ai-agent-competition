@@ -36,7 +36,7 @@ describe('Timeline', () => {
   it('uses readable adaptive landmarks instead of labeling every minute on long plans', () => {
     const longTasks = [{ ...tasks[0], end_offset_sec: 4 * 60 * 60 }]
     const { container } = renderTimeline({ tasks: longTasks })
-    expect(container.querySelectorAll('.axis > span').length).toBeLessThanOrEqual(9)
+    expect(container.querySelectorAll('.axis > span').length).toBeLessThanOrEqual(5)
     expect(screen.getByText('08:30')).toBeInTheDocument()
   })
 

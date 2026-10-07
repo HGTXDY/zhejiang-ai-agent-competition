@@ -17,7 +17,7 @@ interface DishLane { id: string; label: string; tasks: DashboardTask[]; subrows:
 const MIN_WINDOW = 900
 const WINDOW_UNIT = 300
 const TICK_STEPS = [300, 600, 900, 1800, 3600, 7200, 10800]
-const MAX_TICKS = 9
+const MAX_TICKS = 5
 const statusLabel: Record<DashboardTask['status'], string> = { PENDING: '待执行', LOCKED: '已锁定', RUNNING: '执行中', DELAYED: '已延迟', COMPLETED: '已完成', EXCEPTION: '异常', CANCELLED: '已取消' }
 const knownDishLabels: Record<string, string> = {
   braised_ribs: '红烧排骨', steamed_fish: '清蒸鲈鱼', baked_wings: '烤鸡翅', garlic_broccoli: '蒜蓉西兰花', mapo_tofu: '麻婆豆腐',
@@ -90,8 +90,8 @@ export function Timeline({ tasks, resources, selectedId, resourceFilter, targetT
   const windowSize = Math.max(MIN_WINDOW, Math.ceil(planEnd / WINDOW_UNIT) * WINDOW_UNIT)
   // A scheduler axis should establish useful landmarks, not print a label for
   // every tiny interval. Pick the coarsest readable step that keeps the axis
-  // to roughly 6–9 labels; short plans remain precise while long plans use
-  // 10/15/30/60-minute landmarks instead of becoming visual noise.
+  // to no more than five landmarks: the start, the end, and only a few
+  // useful middle points. This keeps the Gantt chart readable on short plans too.
   const tickStep = TICK_STEPS.find(step => windowSize / step <= MAX_TICKS) ?? TICK_STEPS[TICK_STEPS.length - 1]
   const ticks = Array.from({ length: Math.floor(windowSize / tickStep) + 1 }, (_, index) => index * tickStep)
   const resourceTone = useMemo(() => new Map(resources.map(resource => [resource.id, resource.tone])), [resources])
