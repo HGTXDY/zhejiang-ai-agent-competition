@@ -22,8 +22,8 @@ describe('Timeline', () => {
   it('renders one dish swimlane with multiple steps instead of duplicating tasks by resource', () => {
     const { container } = renderTimeline()
     expect(container.querySelectorAll('.dish-lane')).toHaveLength(2)
-    expect(screen.getByText('红烧排骨')).toBeInTheDocument()
-    expect(screen.getByText('2 个步骤')).toBeInTheDocument()
+    expect(screen.getAllByText('红烧排骨').length).toBeGreaterThan(0)
+    expect(screen.getByText(/2 个步骤/)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /排骨焯水/ })).toHaveLength(1)
   })
 
