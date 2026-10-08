@@ -33,17 +33,35 @@ async function flow(names: string[]) {
   await screen.findByText('接下来做什么')
 }
 
-it('opens the full manual recipe catalog when the first step is clicked from the mode chooser', async () => {
+it('keeps the landing page free of manual progress and moves it into manual configuration', async () => {
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
   await screen.findByText(/演示模式/)
 
+  expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
+  expect(screen.queryByText('/ 5 道已选')).not.toBeInTheDocument()
+  expect(screen.queryByText('准时开饭。')).not.toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
   const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
-  fireEvent.click(steps.getByRole('button', { name: /选择菜谱/ }))
+  expect(steps.getAllByRole('button')).toHaveLength(4)
+  expect(steps.getByRole('button', { name: /选择菜谱/ })).toHaveAttribute('aria-current', 'step')
+  expect(screen.getByLabelText('已选择 0 道菜，最多 5 道')).toBeInTheDocument()
   expect(await screen.findByText('选择今天要做的菜')).toBeInTheDocument()
   expect(screen.getAllByText((_, element) => element?.textContent?.includes(`已接入 ${recipeCatalog.length} 道官方菜谱`) ?? false).length).toBeGreaterThan(0)
-  expect(screen.getByRole('button', { name: new RegExp(recipeCatalog[0].name) })).toBeInTheDocument()
+
+  fireEvent.click(recipeCardButton(recipeCatalog[0].name))
+  expect(screen.getByLabelText('已选择 1 道菜，最多 5 道')).toBeInTheDocument()
+})
+
+it('does not show manual progress in Agent planning', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
+  expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
+  expect(screen.queryByText('/ 5 道已选')).not.toBeInTheDocument()
 })
 
 it('manual selection requires 3 dishes, allows 3-5, and never selects a sixth dish', async () => {

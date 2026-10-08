@@ -931,3 +931,31 @@ body { min-height: 100%; }
   .resource-grid { grid-template-columns: 112px minmax(690px, 1fr); min-width: 802px; }
   .resource-section-title { min-width: 802px; }
 }
+
+/* The mode chooser has no manual-only heading or stepper. */
+.product-content { display: flex; flex-direction: column; gap: 10px; }
+.product-content > .mode-chooser,
+.product-content > .agent-workspace,
+.product-content > .planner-grid,
+.product-content > .setup-grid,
+.product-content > .confirm-grid { flex: 1 1 auto; min-height: 0; height: auto; }
+.manual-flow-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch; gap: 12px; flex: 0 0 auto;
+}
+.manual-flow-header .stepper { min-width: 0; }
+.manual-flow-header .selection-count {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 108px; padding: 10px 16px; box-shadow: none;
+}
+.manual-flow-header .selection-count strong { font-size: 26px; }
+.manual-flow-header .selection-count span { margin: 0; }
+@media (max-width: 900px) {
+  .product-content.product-content-choose { overflow-y: auto; }
+  .product-content.product-content-choose > .mode-chooser { flex: 0 0 auto; min-height: auto; }
+}
+@media (max-width: 760px) {
+  .manual-flow-header { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .manual-flow-header .selection-count { grid-row: 1; justify-self: end; padding: 7px 11px; }
+  .manual-flow-header .stepper { grid-row: 2; }
+}
