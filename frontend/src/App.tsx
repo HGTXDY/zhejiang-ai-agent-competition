@@ -143,10 +143,8 @@ export default function App() {
       setSchedule(null); setExecutionStarted(false); setConfirmed(false)
       if (target === 'confirm') setStep('kitchen')
     }
-    // The first step initially shows the planning-mode chooser. Clicking the
-    // stepper must still enter the manual recipe catalog even though `step`
-    // is already `recipes`; otherwise the catalog stays hidden behind the
-    // chooser and users cannot see the official dishes.
+    // The manual stepper must re-open the recipe catalog, even if this is
+    // already the active step.
     if (target === 'recipes') {
       setValidationErrors([]); setWarnings([]); setConfirmed(false); setSchedule(null); setExecutionStarted(false); setManualFlow(true); setPlanningMode('manual'); setStep('recipes'); return
     }
@@ -172,9 +170,11 @@ export default function App() {
         </button>
       </div>
     </header>
-    <section className="product-content">
-      <div className="product-heading"><div><p className="eyebrow">今天的菜单</p><h1>选好菜，<span>准时开饭。</span></h1><p className="subtitle">选 3～5 道菜，告诉我们厨房条件，系统会安排先后顺序和并行步骤。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道已选</span></div></div>
-      <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
+    <section className={`product-content product-content-${planningMode}`}>
+      {planningMode === 'manual' && manualFlow && <div className="manual-flow-header">
+        <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
+        <div className="selection-count" aria-label={`已选择 ${selected.length} 道菜，最多 5 道`}><strong>{selected.length}</strong><span>/ 5 道已选</span></div>
+      </div>}
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
       {planningMode === 'choose' && <PlanningModeChooser onAgent={() => { setManualFlow(false); setPlanningMode('agent') }} onManual={() => { setManualFlow(true); setPlanningMode('manual') }} />}
       {planningMode === 'agent' && <AgentPlanner catalog={recipeCatalog} loading={loading} modelReady={isHttp && modelSettings.ready} offlineDemo={!isHttp} onOpenSettings={() => setModelSettingsOpen(true)} onBack={() => setPlanningMode('choose')} onConfirm={confirmAgentPlan} />}
