@@ -17,9 +17,11 @@ The HTTP client is injectable so tests run against a fake without a network.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Protocol
@@ -61,8 +63,38 @@ class LLMClient(Protocol):
         """Return the model's text for a system/user message pair."""
 
 
+# Only a stateless model-completion POST is retried. Never retry scheduling,
+# device updates or other state-changing application requests.
+_RETRYABLE_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
+_RETRY_DELAYS_SEC = (0.3, 0.8)  # At most two additional attempts.
+_NETWORK_ERRORS = (
+    urllib.error.URLError,
+    http.client.HTTPException,  # IncompleteRead / RemoteDisconnected / BadStatusLine.
+    ConnectionError,
+    TimeoutError,
+)
+
+
+def _http_failure_message(status: int) -> str:
+    # Do not echo the provider's response body, URL or authorization header.
+    if status in {401, 403}:
+        return f"模型服务认证失败（HTTP {status}），请检查 API Key 和访问权限"
+    if status == 404:
+        return "模型接口不存在（HTTP 404），请检查服务地址和模型名称"
+    if status == 429:
+        return "模型服务请求过于频繁或额度受限（HTTP 429），请稍后重试"
+    if status in {408, 500, 502, 503, 504}:
+        return f"模型服务暂时不可用（HTTP {status}），请稍后重试"
+    return f"模型服务拒绝请求（HTTP {status}），请检查模型配置和接口参数"
+
+
 class OpenAICompatClient:
-    """Minimal OpenAI-compatible chat-completions client (no SDK dependency)."""
+    """Minimal OpenAI-compatible chat-completions client (no SDK dependency).
+
+    A bounded retry only handles transient transport errors or selected 5xx/429
+    responses. A provider may have processed a completion before the connection
+    drops, so retries can incur additional model usage; never loop indefinitely.
+    """
 
     def __init__(
         self,
@@ -95,15 +127,50 @@ class OpenAICompatClient:
             },
             method="POST",
         )
+
+        # The frontend's request timeout is 70 seconds. Bound the complete
+        # operation to 60 seconds even when all individual attempts time out.
+        deadline = time.monotonic() + min(60.0, self._timeout_sec * 3)
+        body: Any = None
+        for attempt in range(len(_RETRY_DELAYS_SEC) + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ParsedTaskError("模型服务响应超时，请稍后重新发送")
+            try:
+                with urllib.request.urlopen(request, timeout=min(self._timeout_sec, remaining)) as response:
+                    body = json.loads(response.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as error:
+                # Authentication, invalid input, invalid model, etc. will not
+                # improve on retry. Never disclose the upstream error body.
+                if error.code not in _RETRYABLE_HTTP_STATUSES or attempt == len(_RETRY_DELAYS_SEC):
+                    raise ParsedTaskError(_http_failure_message(error.code)) from error
+                failure_message = _http_failure_message(error.code)
+            except _NETWORK_ERRORS as error:
+                if isinstance(error, TimeoutError):
+                    failure_message = "模型服务响应超时，请稍后重试"
+                else:
+                    failure_message = "模型服务连接意外中断，请稍后重试"
+                if attempt == len(_RETRY_DELAYS_SEC):
+                    raise ParsedTaskError(failure_message) from error
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                # A received but malformed response is a content error, not a
+                # transient connection failure. Do not retry malformed output.
+                raise ParsedTaskError("模型服务返回的数据格式异常，请重试") from error
+
+            # Respect the same total deadline when waiting between attempts.
+            pause = min(_RETRY_DELAYS_SEC[attempt], max(0.0, deadline - time.monotonic()))
+            if pause <= 0:
+                raise ParsedTaskError(failure_message)
+            time.sleep(pause)
+
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout_sec) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise ParsedTaskError(f"LLM request failed: {error}") from error
-        try:
-            return body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as error:
-            raise ParsedTaskError("LLM response is missing choices[0].message.content") from error
+            content = body["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("empty content")
+            return content
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            raise ParsedTaskError("模型回复内容为空或缺少必要字段") from error
 
 
 def extract_json_array(text: str) -> list[Any]:
