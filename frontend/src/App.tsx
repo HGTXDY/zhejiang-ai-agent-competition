@@ -172,9 +172,15 @@ export default function App() {
         </button>
       </div>
     </header>
-    <section className="product-content">
-      <div className="product-heading"><div><p className="eyebrow">今天的菜单</p><h1>选好菜，<span>准时开饭。</span></h1><p className="subtitle">选 3～5 道菜，告诉我们厨房条件，系统会安排先后顺序和并行步骤。</p></div><div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道已选</span></div></div>
-      <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
+    <section className={`product-content ${planningMode === 'choose' ? 'home-content' : 'flow-content'}`}>
+      <div className="product-heading">
+        <div>
+          <p className="eyebrow">今天的菜单</p>
+          {planningMode !== 'choose' && <p className="subtitle">选择一种方式，安排今晚的做饭计划。</p>}
+        </div>
+        {planningMode === 'manual' && <div className="selection-count"><strong>{selected.length}</strong><span>/ 5 道已选</span></div>}
+      </div>
+      {planningMode === 'manual' && <nav className="stepper" aria-label="排程创建步骤">{productSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>}
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
       {planningMode === 'choose' && <PlanningModeChooser onAgent={() => { setManualFlow(false); setPlanningMode('agent') }} onManual={() => { setManualFlow(true); setPlanningMode('manual') }} />}
       {planningMode === 'agent' && <AgentPlanner catalog={recipeCatalog} loading={loading} modelReady={isHttp && modelSettings.ready} offlineDemo={!isHttp} onOpenSettings={() => setModelSettingsOpen(true)} onBack={() => setPlanningMode('choose')} onConfirm={confirmAgentPlan} />}

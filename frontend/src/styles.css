@@ -825,6 +825,9 @@ body { min-height: 100%; }
 .agent-model-notice.ready { border-color: #c9dfd2; color: var(--green); background: #f2faf5; }
 .agent-model-notice.ready > span { background: var(--green); }
 .agent-model-notice.ready small { color: #5d7769; }
+.agent-conversation-title { padding: 18px 20px 0; }
+.agent-conversation-title .eyebrow { margin: 0 0 5px; }
+.agent-conversation-title h2 { margin: 0; color: var(--ink); font-family: var(--display); font-size: clamp(20px, 2.2vw, 28px); line-height: 1.15; letter-spacing: -.025em; }
 
 .agent-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; scrollbar-width: thin; }
 .agent-message { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: start; max-width: 88%; margin-bottom: 14px; }

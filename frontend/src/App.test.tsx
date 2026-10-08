@@ -33,11 +33,25 @@ async function flow(names: string[]) {
   await screen.findByText('接下来做什么')
 }
 
-it('opens the full manual recipe catalog when the first step is clicked from the mode chooser', async () => {
+it('keeps the homepage focused on two planning entries', async () => {
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
   await screen.findByText(/演示模式/)
+
+  expect(screen.getByText('今天的菜单')).toBeInTheDocument()
+  expect(screen.queryByText('选好菜，')).not.toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /直接告诉我今晚怎么吃/ })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /按步骤选择与设置/ })).toBeInTheDocument()
+})
+
+it('opens the full manual recipe catalog after entering the manual flow', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText(/演示模式/)
+  fireEvent.click(screen.getByRole('button', { name: /按步骤选择与设置/ }))
 
   const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
   fireEvent.click(steps.getByRole('button', { name: /选择菜谱/ }))
@@ -169,7 +183,7 @@ it('requires a configured model before enabling the Agent conversation', async (
   const App = (await import('./App')).default
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
-  expect(screen.getByText('说完需求，我来安排')).toBeInTheDocument()
+  expect(screen.getByText('请跟智能agent交流你的晚餐')).toBeInTheDocument()
   expect(screen.getByText('如果使用此功能，请先到右上角的设置配置大模型哦！')).toBeInTheDocument()
   expect(screen.getByLabelText('告诉智能助手你的做饭需求')).toBeDisabled()
   expect(screen.getByRole('button', { name: '发送 ↑' })).toBeDisabled()
