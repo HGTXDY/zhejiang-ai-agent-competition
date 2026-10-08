@@ -3,14 +3,14 @@ import ExecutionDashboard from './components/ExecutionDashboard'
 import ModelSettingsDialog from './components/ModelSettingsDialog'
 import PlanningModeChooser from './components/PlanningModeChooser'
 import AgentPlanner from './components/AgentPlanner'
-import { api, apiMode } from './api/client'
+import { api } from './api/client'
 import { recipeCatalog as mockCatalog } from './mock/recipes'
 import { createMockSchedule, validateProductRequest } from './mock/product'
 import { productApi, productErrorMessage, assertSelection } from './api/product'
 import type { ModelSettings, ModelSettingsUpdate, ParseResult, ParsedTask } from './api/product'
 import type { DashboardSchedule } from './types/contracts'
 import type { KitchenConfig, RecipeSummary } from './types/product'
-import { apiModeLabel, formatDevice, formatDuration, formatMode } from './lib/presentation'
+import { formatDevice, formatDuration, formatMode } from './lib/presentation'
 import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
@@ -161,12 +161,12 @@ export default function App() {
   />
   return <main className="product-shell">
     <header className="product-topbar">
-      <div className="brand"><div className="brand-mark" aria-hidden="true">灶</div><div><strong>灶序</strong><span>智能做饭指挥台</span></div></div>
+      <div className="brand"><div className="brand-mark" aria-hidden="true">灶</div><div><strong>灶序・CookFlow</strong><span>智能做饭指挥台</span></div></div>
       <div className="topbar-actions">
-        <div className="product-status"><span className="status-dot" />{apiModeLabel(apiMode)} · 可以开始规划</div>
+        <div className="product-status"><span className="status-dot" />服务已连接</div>
         <button type="button" className="model-settings-trigger" aria-label="打开智能解析设置" onClick={() => setModelSettingsOpen(true)}>
           <span className={modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? 'model-pulse active' : 'model-pulse warning') : 'model-pulse'} />
-          <span className="model-trigger-copy"><small>菜谱理解</small><strong>{modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? '智能模式' : '尚未连接') : '稳定模式'}</strong></span><b>设置</b>
+          <span className="model-trigger-copy"><strong>{modelSettings.parser_provider === 'llm' && modelSettings.ready ? '智能模式' : '稳定模式'}</strong></span><b>设置</b>
         </button>
       </div>
     </header>
