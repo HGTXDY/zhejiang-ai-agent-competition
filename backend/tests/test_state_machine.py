@@ -35,7 +35,7 @@ def test_locked_task_cannot_be_delayed():
     assert exc.value.code == "TASK_LOCKED"
 
 
-def test_device_unavailable_marks_running_and_locked_tasks_but_not_pending():
+def test_device_unavailable_marks_running_but_preserves_locked_and_pending_history():
     current = schedule()
     current["tasks"][1]["status"] = "RUNNING"
     current["tasks"][1]["locked"] = False
@@ -43,9 +43,11 @@ def test_device_unavailable_marks_running_and_locked_tasks_but_not_pending():
     current["tasks"][2]["locked"] = True
     machine = ExecutionStateMachine(current)
     result = machine.apply(event("e1", "DEVICE_UNAVAILABLE", {"device_id": "stove_1"}))
-    assert set(result.affected_task_ids) == {"cook", "other"}
+    assert set(result.affected_task_ids) == {"cook"}
     assert machine.schedule["tasks"][0]["status"] == "PENDING"
-    assert all(task["status"] == "EXCEPTION" for task in machine.schedule["tasks"] if task["task_id"] in {"cook", "other"})
+    assert machine.schedule["tasks"][1]["status"] == "EXCEPTION"
+    assert machine.schedule["tasks"][2]["status"] == "LOCKED"
+    assert machine.schedule["tasks"][2]["locked"] is True
 
 
 def test_duplicate_event_and_schedule_mismatch_are_rejected():

@@ -37,7 +37,18 @@ const toDiffs = (response: ReplanResponse): ReplanResult['changes'] => response.
   detail: change.change_type === 'MOVED' ? `时间调整至 ${formatOffset(change.new_start_offset_sec)}` : change.change_type === 'RESOURCE_CHANGED' ? `资源调整为 ${(change.new_resources ?? []).join('、') || '人工操作'}` : change.change_type === 'ADDED' ? '临时加入当前排程' : change.change_type === 'LOCKED' ? '已完成/执行中任务保持锁定' : '排程状态已更新',
 }))
 const formatOffset = (offset: number | null | undefined) => offset == null ? '—' : `${Math.floor(offset / 60)}:${String(offset % 60).padStart(2, '0')}`
-const toResult = (response: ReplanResponse): ReplanResult => ({ schedule: apiSchedule(response.schedule), changes: toDiffs(response), notifications: response.schedule.notifications, disruptionScore: response.disruption_score })
+const toResult = (response: ReplanResponse, request: ScheduleRequest, dishName?: string): ReplanResult => {
+  const tasks = (request.tasks ?? []) as Array<{ task_id: string; dish_id: string; action: string }>
+  const labels = new Map(tasks.map(task => [task.task_id, task]))
+  const schedule = apiSchedule(response.schedule)
+  schedule.tasks = schedule.tasks.map(task => ({
+    ...task,
+    action: labels.get(task.task_id)?.action ?? task.action,
+    dish_name: task.dish_name ?? (dishName && response.changes.some(change => change.task_id === task.task_id && change.change_type === 'ADDED') ? dishName : undefined),
+  }))
+  const changes = toDiffs(response).map(change => ({ ...change, action: labels.get(change.task_id)?.action ?? change.action }))
+  return { schedule, changes, notifications: response.schedule.notifications, disruptionScore: response.disruption_score }
+}
 
 /** Build the V1 replan envelope, stripping UI-only fields from the schedule.
  *
@@ -60,9 +71,15 @@ export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRe
 
 export class HttpCookFlowApi implements CookFlowApi {
   private scheduleRequest: ScheduleRequest | null = null
+  private acceptedScheduleId: string | null = null
+  private replanInFlight = false
+  private contextGeneration = 0
+  private eventSequence = 0
   constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
   setScheduleRequest(request: ScheduleRequest): void {
     this.scheduleRequest = structuredClone(request)
+    this.acceptedScheduleId = null
+    this.contextGeneration += 1
   }
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
@@ -73,15 +90,69 @@ export class HttpCookFlowApi implements CookFlowApi {
   async getSchedule(): Promise<DashboardSchedule> {
     await this.request<{ status: string }>('/health')
     const request = await fetch('/demo/schedule-request.json').then(response => { if (!response.ok) throw new Error('Demo schedule request is unavailable'); return response.json() as Promise<ScheduleRequest> })
-    this.scheduleRequest = request
-    return apiSchedule(await this.request<ScheduleResponse>('/v1/schedules', { method: 'POST', body: JSON.stringify(request) }))
+    const result = await this.request<ScheduleResponse>('/v1/schedules', { method: 'POST', body: JSON.stringify(request) })
+    this.setScheduleRequest(request)
+    this.acceptedScheduleId = result.schedule_id
+    return apiSchedule(result)
   }
-  private async replan(event: ReplanEvent, current: DashboardSchedule, addedTasks?: Record<string, unknown>[]): Promise<ReplanResult> {
+  private async replan(event: ReplanEvent, current: DashboardSchedule, dishName?: string): Promise<ReplanResult> {
     if (!this.scheduleRequest) throw new Error('缺少初始排程请求，请重新生成排程')
     if (this.scheduleRequest.request_id !== current.request_id) throw new Error('排程请求上下文不匹配，请重新生成排程')
-    if (addedTasks) event.payload = { ...event.payload, tasks: addedTasks }
-    const envelope = toReplanEnvelope(event, this.scheduleRequest!, current)
-    return toResult(await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) }))
+    if (this.acceptedScheduleId && this.acceptedScheduleId !== current.schedule_id) throw new Error('排程版本已变化，请使用最新排程')
+    if (this.replanInFlight) throw new Error('上一次重排尚未完成，请勿重复提交')
+    this.replanInFlight = true
+    const generation = this.contextGeneration
+    try {
+      const envelope = toReplanEnvelope(event, this.scheduleRequest, current)
+      const response = await this.request<ReplanResponse>('/v1/replans', { method: 'POST', body: JSON.stringify(envelope) })
+      // Build the next lineage independently. Commit it only after the remote
+      // solve and the complete response have both been accepted.
+      if (generation !== this.contextGeneration) throw new Error('已生成新的初始排程，旧重排结果已丢弃')
+      const nextRequest = structuredClone(this.scheduleRequest)
+      if (event.event_type === 'DISH_ADDED') {
+        const existing = new Set(((nextRequest.tasks ?? []) as Array<{ task_id: string }>).map(task => task.task_id))
+        const added = event.payload.tasks as Array<{ task_id: string }>
+        if (added.some(task => existing.has(task.task_id))) throw new Error('临时菜任务编号重复')
+        nextRequest.tasks = [...((nextRequest.tasks ?? []) as object[]), ...structuredClone(added)]
+      }
+      if (event.event_type === 'DEVICE_UNAVAILABLE') {
+        const config = nextRequest.device_config as { devices: Array<{ device_id: string; available?: boolean }> }
+        const device = config.devices.find(item => item.device_id === event.payload.device_id)
+        if (!device) throw new Error('故障设备不在排程请求中')
+        device.available = false
+      }
+      const expectedIds = new Set(((nextRequest.tasks ?? []) as Array<{ task_id: string }>).map(task => task.task_id))
+      const actualIds = response.schedule.tasks.map(task => task.task_id)
+      const returnedTasks = new Map(response.schedule.tasks.map(task => [task.task_id, task]))
+      const historyIntact = current.tasks.filter(task => task.locked || task.status === 'COMPLETED').every(task => {
+        const after = returnedTasks.get(task.task_id)
+        return after?.status === task.status && after?.locked === task.locked
+          && after?.start_offset_sec === task.start_offset_sec && after?.end_offset_sec === task.end_offset_sec
+          && JSON.stringify(after?.assigned_resources) === JSON.stringify(task.assigned_resources)
+      })
+      const unavailable = new Set(((nextRequest.device_config as { devices: Array<{ device_id: string; available?: boolean }> }).devices)
+        .filter(device => device.available === false).map(device => device.device_id))
+      const futureAvoidsFailures = response.schedule.tasks.every(task => task.locked
+        || !task.assigned_resources.some(id => unavailable.has(id)))
+      if (response.previous_schedule_id !== current.schedule_id
+        || response.schedule.request_id !== current.request_id
+        || response.schedule.schedule_id === current.schedule_id
+        || response.schedule.validation.valid !== true
+        || !['OPTIMAL', 'FEASIBLE'].includes(response.schedule.solver.status)
+        || response.schedule.metrics.device_conflicts !== 0
+        || response.schedule.metrics.dependency_violations !== 0
+        || expectedIds.size !== actualIds.length
+        || actualIds.some(id => !expectedIds.has(id))
+        || !historyIntact || !futureAvoidsFailures) {
+        throw new Error('重排响应不完整或校验未通过，已保留原排程')
+      }
+      const result = toResult(response, nextRequest, dishName)
+      this.scheduleRequest = nextRequest
+      this.acceptedScheduleId = response.schedule.schedule_id
+      return result
+    } finally {
+      this.replanInFlight = false
+    }
   }
   async postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule, options?: { delaySec?: number; deviceId?: string }): Promise<ReplanResult> {
     if (status === 'RUNNING') {
@@ -96,11 +167,14 @@ export class HttpCookFlowApi implements CookFlowApi {
   async addDish(current: DashboardSchedule, recipe: RecipeSummary): Promise<ReplanResult> {
     const fullRecipe = await this.request<Recipe>(`/recipes/${encodeURIComponent(recipe.recipe_id)}`)
     const parsed = await this.request<ParseResult>('/recipes/parse', { method: 'POST', body: JSON.stringify(fullRecipe) })
-    const stamp = Date.now()
+    const stamp = `${Date.now()}_${++this.eventSequence}`
+    if (new Set(parsed.tasks.map(task => task.task_id)).size !== parsed.tasks.length) throw new Error('临时菜解析结果存在重复任务')
+    const parsedIds = new Set(parsed.tasks.map(task => task.task_id))
+    if (parsed.tasks.some(task => task.predecessors.some(id => !parsedIds.has(id)))) throw new Error('临时菜解析结果存在无效依赖')
     const taskIdMap = new Map(parsed.tasks.map(task => [task.task_id, `${recipe.recipe_id}_${task.task_id}_${stamp}`]))
     const tasks = parsed.tasks.map(task => ({ ...task, task_id: taskIdMap.get(task.task_id)!, dish_id: recipe.recipe_id, predecessors: task.predecessors.map(id => taskIdMap.get(id) ?? id) }))
     if (!tasks.length) throw new Error('这道菜暂时无法解析出可执行步骤，请换一道菜')
-    return this.replan({ schema_version: '1.0', event_id: `evt_${stamp}`, schedule_id: current.schedule_id, event_type: 'DISH_ADDED', occurred_at: new Date().toISOString(), payload: { tasks } }, current, tasks)
+    return this.replan({ schema_version: '1.0', event_id: `evt_${stamp}`, schedule_id: current.schedule_id, event_type: 'DISH_ADDED', occurred_at: new Date().toISOString(), payload: { tasks } }, current, recipe.name)
   }
 }
 

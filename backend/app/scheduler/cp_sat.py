@@ -33,6 +33,8 @@ from app.notifications import build_key_node_plan
 class SchedulerConfig:
     max_solve_time_sec: int = 5
     seed: int = 0
+    # Benchmark switch; the production replan path uses warm starts by default.
+    enable_replan_warm_start: bool = True
 
 
 def _compatible_devices(task: dict[str, Any], devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -201,6 +203,8 @@ def schedule(
     locked_tasks: dict[str, dict[str, Any]] | None = None,
     start_floors: dict[str, int] | None = None,
     include_notifications: bool = True,
+    previous_schedule: dict[str, Any] | None = None,
+    stage_diagnostics: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Create a V1-shaped schedule from a validated schedule request."""
     config = config or SchedulerConfig()
@@ -257,6 +261,17 @@ def schedule(
         requirement = task.get("device_requirement")
         if requirement:
             candidates = _compatible_devices(task, devices)
+            # Completed/locked work is history, not future device demand: retain
+            # its original assignment even when that device has since failed.
+            if locked is not None:
+                assigned = set(locked.get("assigned_resources", []))
+                historical = [
+                    device for device in devices
+                    if device["device_id"] in assigned
+                    and device["device_id"] not in {item["device_id"] for item in candidates}
+                    and _compatible_devices(task, [{**device, "available": True}])
+                ]
+                candidates.extend(historical)
             if not candidates:
                 elapsed_ms = int((perf_counter() - started) * 1000)
                 return _error_response(request, "NO_COMPATIBLE_DEVICE", f"No compatible device for task {task_id}", elapsed_ms)
@@ -366,21 +381,71 @@ def schedule(
         model, manual_segments, manual_merge_gap_sec, horizon
     )
 
-    deadline = perf_counter() + max_solve_time_sec
+    # Hints are advisory only. They never replace locked-task equalities, device
+    # capacity, dependencies or the lexicographic objectives. Initial scheduling
+    # deliberately follows its original, hint-free path.
+    use_hints = previous_schedule is not None and config.enable_replan_warm_start
+    if use_hints:
+        old_tasks = {task["task_id"]: task for task in previous_schedule.get("tasks", [])}
+        for task_id, start in starts.items():
+            old = old_tasks.get(task_id)
+            if old is None or task_id in locked_tasks:
+                continue  # New dishes have no previous position; history is fixed.
+            old_start = old.get("start_offset_sec")
+            if (isinstance(old_start, int) and 0 <= old_start <= horizon
+                    and old_start >= start_floors.get(task_id, 0)):
+                model.AddHint(start, old_start)
+            assignments = set(old.get("assigned_resources", []))
+            choices = device_choices.get(task_id, [])
+            # Do not hint all-false after a device fails; ExactlyOne requires
+            # selecting a *currently* compatible unit instead.
+            if any(device["device_id"] in assignments for device, _ in choices):
+                for device, selected in choices:
+                    model.AddHint(selected, int(device["device_id"] in assignments))
 
-    def solve_stage() -> tuple[cp_model.CpSolver | None, int]:
-        solver = cp_model.CpSolver()
+    deadline = perf_counter() + max_solve_time_sec
+    solved_var_counts: dict[int, int] = {}
+
+    def solve_stage(name: str, incumbent: cp_model.CpSolver | None = None) -> tuple[cp_model.CpSolver | None, int]:
+        prepared_at = perf_counter()
+        if use_hints and incumbent is not None:
+            # Every phase receives one consistent incumbent, including the
+            # continuous-manual auxiliary booleans. ClearHints avoids duplicate
+            # hints when switching objectives (and after adding tie-break vars).
+            model.ClearHints()
+            for index in range(solved_var_counts[id(incumbent)]):
+                var = model.GetIntVarFromProtoIndex(index)
+                model.AddHint(var, incumbent.Value(var))
+        hint_count = len(model.Proto().solution_hint.vars) if stage_diagnostics is not None else 0
         remaining = deadline - perf_counter()
         if remaining <= 0:
+            if stage_diagnostics is not None:
+                stage_diagnostics.append({"stage": name, "status": "NO_BUDGET", "solve_ms": 0.0,
+                                          "prepare_ms": round((perf_counter() - prepared_at) * 1000, 3),
+                                          "hint_count": hint_count, "remaining_ms": 0.0})
             return None, cp_model.UNKNOWN
+        solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = remaining
         solver.parameters.num_search_workers = 1
         solver.parameters.random_seed = config.seed
-        return solver, solver.Solve(model)
+        solve_started = perf_counter()
+        status = solver.Solve(model)
+        if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            solved_var_counts[id(solver)] = len(model.Proto().variables)
+        if stage_diagnostics is not None:
+            stage_diagnostics.append({
+                "stage": name, "status": _status_name(status),
+                "solve_ms": round((perf_counter() - solve_started) * 1000, 3),
+                "prepare_ms": round((solve_started - prepared_at) * 1000, 3),
+                "hint_count": hint_count, "remaining_ms": round(remaining * 1000, 3),
+                "objective_value": solver.ObjectiveValue() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None,
+                "best_bound": solver.BestObjectiveBound() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None,
+            })
+        return solver, status
 
     # Stage 1: minimise finish spread (highest-priority soft objective).
     model.Minimize(finish_spread)
-    solver, status = solve_stage()
+    solver, status = solve_stage("finish_spread")
     if solver is None or status == cp_model.UNKNOWN:
         return _error_response(
             request,
@@ -399,7 +464,7 @@ def schedule(
     # Stage 2: minimise makespan subject to the pinned finish spread.
     model.ClearObjective()
     model.Minimize(makespan)
-    solver, status = solve_stage()
+    solver, status = solve_stage("makespan", final_solver)
     if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
         model.Add(makespan <= solver.Value(makespan))
         makespan_bound = solver.BestObjectiveBound()
@@ -412,7 +477,7 @@ def schedule(
         if continuous_manual is not None:
             model.ClearObjective()
             model.Minimize(continuous_manual)
-            solver, status = solve_stage()
+            solver, status = solve_stage("continuous_manual", final_solver)
             if solver is not None and status not in {cp_model.INFEASIBLE, cp_model.UNKNOWN}:
                 final_solver = solver
                 all_optimal = all_optimal and status == cp_model.OPTIMAL
@@ -420,6 +485,57 @@ def schedule(
                 all_optimal = False
     else:
         all_optimal = False
+
+    # Replan-only lexicographic tie-break. Never relax the existing Level 3
+    # objectives: apply this only after all three stages proved optimal, and
+    # pin their optimal values before solving any disturbance objective.
+    # A timeout at either tie-break stage retains the last valid solution.
+    if previous_schedule is not None and all_optimal:
+        if continuous_manual is not None:
+            model.Add(continuous_manual <= final_solver.Value(continuous_manual))
+        old_tasks = {task["task_id"]: task for task in previous_schedule.get("tasks", [])}
+        displacement = []
+        resource_changes = []
+        for task_id, old in old_tasks.items():
+            if task_id not in starts or task_id in locked_tasks:
+                continue
+            shift = model.NewIntVar(0, horizon, f"replan_shift_{task_id}")
+            model.AddAbsEquality(shift, starts[task_id] - old["start_offset_sec"])
+            displacement.append(shift)
+            old_resources = set(old.get("assigned_resources", []))
+            if task_id in device_choices:
+                for device, selected in device_choices[task_id]:
+                    if device["device_id"] in old_resources:
+                        resource_changes.append(1 - selected)
+        if displacement or resource_changes:
+            if displacement:
+                total_shift = model.NewIntVar(0, horizon * len(displacement), "replan_total_shift")
+                model.Add(total_shift == sum(displacement))
+                model.ClearObjective()
+                model.Minimize(total_shift)
+                candidate_solver, tie_status = solve_stage("start_displacement", final_solver)
+                if candidate_solver is not None and tie_status in {cp_model.OPTIMAL, cp_model.FEASIBLE}:
+                    final_solver = candidate_solver
+                    if tie_status == cp_model.OPTIMAL and resource_changes:
+                        model.Add(total_shift == candidate_solver.Value(total_shift))
+                        model.ClearObjective()
+                        model.Minimize(sum(resource_changes))
+                        resource_solver, resource_status = solve_stage("resource_changes", final_solver)
+                        if resource_solver is not None and resource_status in {cp_model.OPTIMAL, cp_model.FEASIBLE}:
+                            final_solver = resource_solver
+            elif resource_changes:
+                model.ClearObjective()
+                model.Minimize(sum(resource_changes))
+                candidate_solver, tie_status = solve_stage("resource_changes", final_solver)
+                if candidate_solver is not None and tie_status in {cp_model.OPTIMAL, cp_model.FEASIBLE}:
+                    final_solver = candidate_solver
+
+    if previous_schedule is not None and not all_optimal and stage_diagnostics is not None:
+        stage_diagnostics.append({
+            "stage": "disturbance_tiebreak", "status": "SKIPPED_LEVEL3_NOT_OPTIMAL",
+            "solve_ms": 0.0, "prepare_ms": 0.0, "hint_count": 0,
+            "remaining_ms": round(max(0.0, deadline - perf_counter()) * 1000, 3),
+        })
 
     elapsed_ms = int((perf_counter() - started) * 1000)
     status_name = "OPTIMAL" if all_optimal else "FEASIBLE"
