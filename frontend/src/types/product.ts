@@ -44,7 +44,7 @@ export interface AgentPlanDraft {
   devices: Partial<Pick<KitchenConfig, 'stove_count' | 'steamer_count' | 'oven_count' | 'refrigerator_count' | 'dishwasher_count' | 'range_hood_count' | 'water_purifier_count'>>
 }
 export interface AgentPlanResponse {
-  intent: 'create_schedule'
+  intent: 'create_schedule' | 'answer_question'
   reply: string
   draft: AgentPlanDraft
   missing_fields: string[]

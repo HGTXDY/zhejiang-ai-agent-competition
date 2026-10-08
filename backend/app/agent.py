@@ -120,7 +120,7 @@ def _missing_fields(draft: dict[str, Any]) -> list[str]:
     return missing
 
 
-def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str], unmatched_names: list[str]) -> str:
+def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str], unmatched_names: list[str], *, intent: str) -> str:
     labels = {
         "recipes": "请告诉我想做的 3～5 道菜（需来自菜谱库）。",
         "target_time": "希望几点开饭？",
@@ -136,10 +136,17 @@ def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str], unmatched
     if unmatched_names:
         names = "、".join(unmatched_names[:5])
         return f"以下菜品暂时无法从官方菜谱库中唯一确认：{names}。请重新选择，或补充能唯一确认的菜品信息。"
+    # Prefer the model's conversational reply. The model sees the validated
+    # catalog and current draft, so it can answer an in-scope question or ask
+    # for missing information naturally instead of always sounding like a
+    # generated form. Deterministic text remains a fail-safe only.
+    if isinstance(value, str) and 1 <= len(value.strip()) <= 600:
+        reply = value.strip()
+        generic_planning_replies = {"好的", "收到", "明白", "明白了", "可以", "可以确认", "已记录", "记下了"}
+        if intent == "answer_question" or not missing or reply not in generic_planning_replies:
+            return reply
     if missing:
         return "我已经记下现有信息。" + "".join(labels[item] for item in missing[:2])
-    if isinstance(value, str) and 1 <= len(value.strip()) <= 300:
-        return value.strip()
     return f"我理解了：{draft['target_time']} 开饭，{draft['operator_count']} 人操作，共 {len(draft['recipes'])} 道菜。请确认信息后进入菜谱步骤确认。"
 
 
@@ -180,23 +187,33 @@ def interpret_plan(payload: dict[str, Any], *, client: LLMClient) -> dict[str, A
             devices[field] = count
 
     draft = {"recipes": recipes, "target_time": target_time, "operator_count": operator_count, "devices": devices}
+    intent = "answer_question" if raw.get("intent") == "answer_question" else "create_schedule"
     missing = _missing_fields(draft)
     unmatched = raw.get("unmatched_recipe_names")
     model_unmatched = [str(item).strip()[:80] for item in unmatched if isinstance(item, str) and item.strip()] if isinstance(unmatched, list) else []
-    unmatched_names = list(dict.fromkeys([*model_unmatched, *rejected_recipe_names]))[:5]
+    # Asking whether a dish exists is not the same as selecting an unmatched
+    # dish for the plan. Only planning turns can create selection errors.
+    unmatched_names = [] if intent == "answer_question" else list(dict.fromkeys([*model_unmatched, *rejected_recipe_names]))[:5]
     blocked = bool(missing or unmatched_names)
+    if intent == "answer_question":
+        tool_trace = [
+            {"name": "understand_request", "status": "completed", "label": "大模型已理解本轮问题"},
+            {"name": "reference_catalog", "status": "completed", "label": "已参考官方菜谱库回答"},
+        ]
+    else:
+        tool_trace = [
+            {"name": "understand_request", "status": "completed", "label": "大模型已理解本轮需求"},
+            {"name": "match_recipes", "status": "completed", "label": f"菜谱库已确认 {len(recipes)} 道菜"},
+            {"name": "validate_draft", "status": "waiting" if blocked else "completed", "label": "规划字段等待补充" if blocked else "规划字段校验通过"},
+        ]
     return {
-        "intent": "create_schedule",
-        "reply": _safe_reply(raw.get("reply"), draft, missing, unmatched_names),
+        "intent": intent,
+        "reply": _safe_reply(raw.get("reply"), draft, missing, unmatched_names, intent=intent),
         "draft": draft,
         "missing_fields": missing,
         "unmatched_recipe_names": unmatched_names,
         "ready_to_confirm": not blocked,
-        "tool_trace": [
-            {"name": "understand_request", "status": "completed", "label": "大模型已理解本轮需求"},
-            {"name": "match_recipes", "status": "completed", "label": f"菜谱库已确认 {len(recipes)} 道菜"},
-            {"name": "validate_draft", "status": "waiting" if blocked else "completed", "label": "规划字段等待补充" if blocked else "规划字段校验通过"},
-        ],
+        "tool_trace": tool_trace,
     }
 
 

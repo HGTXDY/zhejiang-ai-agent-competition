@@ -21,8 +21,9 @@ const productSteps: { key: ProductStep; number: string; label: string }[] = [
   { key: 'confirm', number: '03', label: '确认步骤' }, { key: 'result', number: '04', label: '开始做饭' },
 ]
 const agentSteps: { key: ProductStep; number: string; label: string }[] = [
-  { key: 'recipes', number: '01', label: '收集需求' }, { key: 'kitchen', number: '02', label: '确认信息' },
-  { key: 'confirm', number: '03', label: '确认步骤' }, { key: 'result', number: '04', label: '开始做饭' },
+  { key: 'recipes', number: '01', label: '收集需求' },
+  { key: 'confirm', number: '02', label: '确认信息' },
+  { key: 'result', number: '03', label: '开始做饭' },
 ]
 const defaultKitchen: KitchenConfig = { target_time: '12:30', operator_count: 1, stove_count: 1, steamer_count: 1, oven_count: 1, refrigerator_count: 1, dishwasher_count: 1, range_hood_count: 1, water_purifier_count: 1 }
 const isHttp = import.meta.env.VITE_API_MODE === 'http'
@@ -63,6 +64,7 @@ export default function App() {
   }, [retry])
 
   const selected = useMemo(() => selectedIds.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)).filter(Boolean) as RecipeSummary[], [selectedIds, recipeCatalog])
+  const visibleSteps = planSource === 'agent' ? agentSteps : productSteps
   const visibleRecipes = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     return normalized ? recipeCatalog.filter(recipe => recipe.name.toLowerCase().includes(normalized)) : recipeCatalog
@@ -184,7 +186,7 @@ export default function App() {
     </header>
     <section className={`product-content product-content-${planningMode}`}>
       {((planningMode === 'manual' && manualFlow) || (planningMode === 'agent' && step !== 'recipes')) && <div className="manual-flow-header">
-        <nav className="stepper" aria-label="排程创建步骤">{(planSource === 'agent' ? agentSteps : productSteps).map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${productSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
+        <nav className="stepper" aria-label="排程创建步骤">{visibleSteps.map(({ key, number, label }, index) => <button type="button" key={key} aria-current={step === key ? 'step' : undefined} className={`${step === key ? 'active' : ''} ${visibleSteps.findIndex(item => item.key === step) > index ? 'done' : ''}`} disabled={loading} onClick={() => navigateTo(key)}><b>{number}</b><span>{label}</span></button>)}</nav>
         <div className="selection-count" aria-label={`已选择 ${selected.length} 道菜，最多 5 道`}><strong>{selected.length}</strong><span>/ 5 道已选</span></div>
       </div>}
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
