@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { draftToKitchen, interpretAgentMessage } from '../api/agent'
+import { ProductApiError } from '../api/product'
 import type { AgentPlanDraft, AgentPlanResponse, KitchenConfig, RecipeSummary } from '../types/product'
 
 interface Message { role: 'agent' | 'user'; text: string }
@@ -15,7 +16,17 @@ export default function AgentPlanner({ catalog, loading, modelReady, offlineDemo
     const message = text.trim(); if (!message || busy || !modelReady) return
     setMessages(current => [...current, { role: 'user', text: message }]); setInput(''); setBusy(true)
     try { const next = await interpretAgentMessage(message, catalog, result?.draft); setResult(next); setMessages(current => [...current, { role: 'agent', text: next.reply }]) }
-    catch { setMessages(current => [...current, { role: 'agent', text: '理解失败了，请检查服务连接后重试。' }]) }
+    catch (error) {
+      const reason = error instanceof ProductApiError
+        ? error.message
+        : error instanceof DOMException && error.name === 'AbortError'
+          ? '智能服务等待超时，请稍后重试'
+          : '连接智能服务失败，请检查网络和后端状态'
+      const contextNote = result ? '已保留之前确认的菜单和厨房条件' : '本轮未完成理解'
+      setMessages(current => [...current, {
+        role: 'agent', text: `${reason}。${contextNote}，请重新发送这句话。`,
+      }])
+    }
     finally { setBusy(false) }
   }
   const draft = result?.draft
