@@ -51,7 +51,7 @@ def _schema_issues(validator: Draft202012Validator, value: dict[str, Any]) -> li
     ]
 
 
-def validate_schedule_request(request: dict[str, Any]) -> ValidationResult:
+def validate_schedule_request(request: dict[str, Any], *, historical_task_ids: frozenset[str] = frozenset()) -> ValidationResult:
     """Validate schema, cross-object invariants, and device capability feasibility."""
     errors = _schema_issues(REQUEST_VALIDATOR, request)
     if errors:
@@ -61,11 +61,11 @@ def validate_schedule_request(request: dict[str, Any]) -> ValidationResult:
     except ValueError as error:
         return ValidationResult(False, (ValidationIssue("PYDANTIC_VALIDATION_ERROR", str(error)),))
 
-    errors = _request_invariants(model)
+    errors = _request_invariants(model, historical_task_ids=historical_task_ids)
     return ValidationResult(not errors, tuple(errors))
 
 
-def _request_invariants(request: ScheduleRequest) -> list[ValidationIssue]:
+def _request_invariants(request: ScheduleRequest, *, historical_task_ids: frozenset[str] = frozenset()) -> list[ValidationIssue]:
     errors: list[ValidationIssue] = []
     task_by_id = {task.task_id: task for task in request.tasks}
     if len(task_by_id) != len(request.tasks):
@@ -109,7 +109,7 @@ def _request_invariants(request: ScheduleRequest) -> list[ValidationIssue]:
                 errors.append(ValidationIssue("MANUAL_SEGMENT_OVERLAP", "manual segments overlap", f"tasks[{task.task_id}].manual_segments[{index}]"))
             previous_end = max(previous_end, segment_end)
 
-        if task.device_requirement is not None:
+        if task.device_requirement is not None and task.task_id not in historical_task_ids:
             capability_error = _device_capability_error(task, request.device_config.devices)
             if capability_error is not None:
                 errors.append(
@@ -177,13 +177,13 @@ def _device_capability_error(task: Any, devices: Iterable[Any]) -> tuple[str, st
     return None
 
 
-def _compatible_devices(task: Any, devices: Iterable[Any]) -> list[str]:
+def _compatible_devices(task: Any, devices: Iterable[Any], *, include_unavailable: bool = False) -> list[str]:
     requirement = task.device_requirement
     if requirement is None:
         return []
     matches: list[str] = []
     for device in devices:
-        if not device.available or device.device_type != requirement.device_type:
+        if (not include_unavailable and not device.available) or device.device_type != requirement.device_type:
             continue
         if requirement.mode is not None and requirement.mode not in device.capabilities.modes:
             continue
@@ -207,12 +207,12 @@ def build_device_candidates(request: dict[str, Any]) -> dict[str, list[str]]:
     }
 
 
-def validate_schedule_result(request: dict[str, Any], response: dict[str, Any]) -> ValidationResult:
+def validate_schedule_result(request: dict[str, Any], response: dict[str, Any], *, historical_task_ids: frozenset[str] = frozenset()) -> ValidationResult:
     """Validate a schedule response and independently check resource/time invariants."""
     errors = _schema_issues(RESPONSE_VALIDATOR, response)
     if errors:
         return ValidationResult(False, tuple(errors))
-    request_result = validate_schedule_request(request)
+    request_result = validate_schedule_request(request, historical_task_ids=historical_task_ids)
     if not request_result.valid:
         return request_result
     model = ScheduleRequest.model_validate(request)
@@ -230,7 +230,10 @@ def validate_schedule_result(request: dict[str, Any], response: dict[str, Any]) 
         for predecessor in definition.predecessors:
             if scheduled[predecessor]["end_offset_sec"] > start:
                 errors.append(ValidationIssue("DEPENDENCY_VIOLATION", f"{task_id} starts before predecessor {predecessor} completes", f"tasks[{task_id}].start_offset_sec"))
-        candidate_ids = set(_compatible_devices(definition, model.device_config.devices))
+        candidate_ids = set(_compatible_devices(
+            definition, model.device_config.devices,
+            include_unavailable=task_id in historical_task_ids,
+        ))
         assigned_devices = {resource for resource in item["assigned_resources"] if resource in {device.device_id for device in model.device_config.devices}}
         if definition.device_requirement is not None and not assigned_devices.intersection(candidate_ids):
             errors.append(ValidationIssue("RESOURCE_CAPABILITY_MISMATCH", f"task {task_id} is assigned no compatible device", f"tasks[{task_id}].assigned_resources"))
@@ -372,7 +375,7 @@ def _dedupe(errors: Iterable[ValidationIssue]) -> list[ValidationIssue]:
     return result
 
 
-def annotate_schedule_result(request: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+def annotate_schedule_result(request: dict[str, Any], result: dict[str, Any], *, historical_task_ids: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Independently re-check a produced schedule and backfill conflict counts.
 
     The solver enforces every hard constraint, so `device_conflicts` and
@@ -385,7 +388,7 @@ def annotate_schedule_result(request: dict[str, Any], result: dict[str, Any]) ->
     status = (result.get("solver") or {}).get("status")
     if status in {"INFEASIBLE", "UNKNOWN"}:
         return result
-    check = validate_schedule_result(request, result)
+    check = validate_schedule_result(request, result, historical_task_ids=historical_task_ids)
     if check.valid:
         return result
     result["validation"] = check.as_dict()

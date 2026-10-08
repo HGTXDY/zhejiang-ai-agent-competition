@@ -21,6 +21,21 @@ describe('ExecutionDashboard', () => {
     expect(screen.getAllByRole('button', { name: /清蒸鲈鱼/ })[0]).toBeInTheDocument()
   })
 
+  it('disables restoring the initial schedule after execution changes', async () => {
+    render(<ExecutionDashboard />)
+    selectFishSteam()
+    const restore = screen.getByRole('button', { name: '恢复计划' })
+    expect(restore).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '开始执行' }))
+    await waitFor(() =>
+      expect(restore).toHaveAttribute(
+        'title',
+        '执行状态已变化，不能回滚到最初计划',
+      ),
+    )
+    expect(restore).toBeDisabled()
+  })
+
   it('drives a task from PENDING through RUNNING to COMPLETED', async () => {
     render(<ExecutionDashboard />)
     selectFishSteam()

@@ -13,12 +13,12 @@ from typing import Any
 ALLOWED_EVENTS = {"TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE"}
 LOCKED_STATUSES = {"COMPLETED", "LOCKED"}
 # Explicit transition policy: execution events cannot skip the lifecycle start.
-# A replan may mark pending work as exceptional when a device disappears, but
-# completion and delay reports require work that has actually started.
+# Device failures may mark active work as exceptional, but never rewrite locked
+# history. Completion and delay reports require work that has started.
 EVENT_ALLOWED_STATES = {
     "TASK_COMPLETED": {"RUNNING", "DELAYED"},
     "TASK_DELAYED": {"RUNNING"},
-    "DEVICE_UNAVAILABLE": {"RUNNING", "DELAYED", "LOCKED"},
+    "DEVICE_UNAVAILABLE": {"RUNNING", "DELAYED"},
 }
 
 
@@ -102,6 +102,8 @@ class ExecutionStateMachine:
         for task in self._tasks.values():
             if device_id not in task.get("assigned_resources", []):
                 continue
+            if task.get("locked") or task.get("status") in LOCKED_STATUSES:
+                continue  # Device failures must never rewrite committed history.
             if task.get("status") not in EVENT_ALLOWED_STATES["DEVICE_UNAVAILABLE"]:
                 continue
             task["status"] = "EXCEPTION"

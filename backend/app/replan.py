@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
 from app.execution import ExecutionStateMachine, EventError, build_notifications, compare_schedules
-from app.scheduler import schedule
+from app.scheduler import SchedulerConfig, schedule
 from app.validation import annotate_schedule_result
 from scripts.validate_contracts import validate_schedule_request_business_rules
 
@@ -67,7 +67,28 @@ def apply_event_to_request(request: dict[str, Any], event: dict[str, Any]) -> No
                 device["available"] = False
 
 
-def replan(envelope: dict[str, Any]) -> dict[str, Any]:
+# Existing request business checks include *availability* for every task.
+# In a rolling replan, completed tasks may have used a device that has since
+# failed. Keep all structural checks, but defer compatibility after a failure
+# to CP-SAT (which understands pinned history vs. mutable future tasks).
+_CAPABILITY_ERRORS = {
+    "DEVICE_TYPE_UNAVAILABLE", "DEVICE_MODE_UNSUPPORTED",
+    "DEVICE_TEMPERATURE_UNSUPPORTED", "DEVICE_CAPACITY_INSUFFICIENT",
+}
+
+
+def _replan_business_errors(request: dict[str, Any]) -> list[str]:
+    errors = validate_schedule_request_business_rules(request)
+    if any(not device.get("available", True) for device in request["device_config"]["devices"]):
+        errors = [error for error in errors if error not in _CAPABILITY_ERRORS]
+    return errors
+
+
+def replan(
+    envelope: dict[str, Any], *,
+    scheduler_config: SchedulerConfig | None = None,
+    stage_diagnostics: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Apply one event and produce a V1 replan response.
 
     The endpoint intentionally receives the current schedule and its original
@@ -90,11 +111,18 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     request_errors = _schema_errors(REQUEST_VALIDATOR, request)
     if request_errors:
         raise ReplanError("INVALID_INPUT", "Schedule request does not satisfy V1 schema", details=request_errors)
-    business_errors = validate_schedule_request_business_rules(request)
+    business_errors = _replan_business_errors(request)
     if business_errors:
         raise ReplanError("VALIDATION_FAILED", "Schedule request violates V1 business rules", details=[{"code": code, "message": code, "path": None} for code in business_errors])
     if previous.get("schedule_id") != event["schedule_id"]:
         raise ReplanError("SCHEDULE_MISMATCH", "Event schedule_id does not match current schedule")
+    if request["request_id"] != previous["request_id"]:
+        raise ReplanError("SCHEDULE_MISMATCH", "Schedule request ID differs from the current schedule")
+    # A stateless caller must send the full request lineage from the preceding
+    # successful replan. Reject stale/incomplete contexts rather than silently
+    # dropping a previously added dish from the task network.
+    if {task["task_id"] for task in request["tasks"]} != {task["task_id"] for task in previous["tasks"]}:
+        raise ReplanError("SCHEDULE_MISMATCH", "Request tasks differ from current schedule; stale replan lineage")
 
     if event["event_type"] == "DEVICE_UNAVAILABLE":
         device_id = event["payload"]["device_id"]
@@ -114,7 +142,7 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
     updated = machine.schedule
 
     apply_event_to_request(request, event)
-    updated_business_errors = validate_schedule_request_business_rules(request)
+    updated_business_errors = _replan_business_errors(request)
     if updated_business_errors:
         raise ReplanError(
             "VALIDATION_FAILED",
@@ -138,7 +166,11 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
         if old_task is not None:
             start_floors[task_id] = old_task.get("start_offset_sec", 0) + event["payload"]["delay_sec"]
 
-    candidate = schedule(request, locked_tasks=locked_tasks, start_floors=start_floors)
+    candidate = schedule(
+        request, config=scheduler_config, locked_tasks=locked_tasks,
+        start_floors=start_floors, previous_schedule=previous,
+        stage_diagnostics=stage_diagnostics,
+    )
     if candidate["solver"]["status"] == "UNKNOWN":
         raise ReplanError("SOLVER_TIMEOUT", "Replan solver timed out", status_code=504)
     if candidate["solver"]["status"] == "INFEASIBLE":
@@ -149,7 +181,14 @@ def replan(envelope: dict[str, Any]) -> dict[str, Any]:
         if state:
             task["status"] = state.get("status", task["status"])
             task["locked"] = bool(state.get("locked", task["locked"]))
-    annotate_schedule_result(request, candidate)
+    historical_ids = frozenset(
+        task_id for task_id, task in locked_tasks.items()
+        if task.get("locked") or task.get("status") in {"COMPLETED", "LOCKED"}
+    )
+    annotate_schedule_result(request, candidate, historical_task_ids=historical_ids)
+    if not candidate["validation"]["valid"]:
+        raise ReplanError("VALIDATION_FAILED", "Replan result failed independent validation", status_code=409,
+                          details=candidate["validation"]["errors"])
     candidate["schedule_id"] = f"{previous['schedule_id']}:replan:{event['event_id']}"
     changes, metrics = compare_schedules(previous.get("tasks", []), candidate["tasks"], notified_task_ids=set(result.affected_task_ids))
     task_meta = {task["task_id"]: task for task in request.get("tasks", [])}
