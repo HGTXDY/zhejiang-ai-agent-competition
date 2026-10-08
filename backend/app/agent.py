@@ -140,7 +140,7 @@ def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str], unmatched
         return "我已经记下现有信息。" + "".join(labels[item] for item in missing[:2])
     if isinstance(value, str) and 1 <= len(value.strip()) <= 300:
         return value.strip()
-    return f"我理解了：{draft['target_time']} 开饭，{draft['operator_count']} 人操作，共 {len(draft['recipes'])} 道菜。请确认后生成计划。"
+    return f"我理解了：{draft['target_time']} 开饭，{draft['operator_count']} 人操作，共 {len(draft['recipes'])} 道菜。请确认信息后进入菜谱步骤确认。"
 
 
 def interpret_plan(payload: dict[str, Any], *, client: LLMClient) -> dict[str, Any]:
