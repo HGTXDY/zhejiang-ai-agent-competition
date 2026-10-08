@@ -41,7 +41,7 @@ export interface AgentPlanDraft {
   recipes: AgentRecipeMatch[]
   target_time: string | null
   operator_count: number | null
-  devices: Partial<Pick<KitchenConfig, 'stove_count' | 'steamer_count' | 'oven_count'>>
+  devices: Partial<Pick<KitchenConfig, 'stove_count' | 'steamer_count' | 'oven_count' | 'refrigerator_count' | 'dishwasher_count' | 'range_hood_count' | 'water_purifier_count'>>
 }
 export interface AgentPlanResponse {
   intent: 'create_schedule'

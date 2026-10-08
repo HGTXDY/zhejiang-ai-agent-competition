@@ -16,6 +16,15 @@ from app.parser.adapter import ParsedTaskError
 from app.parser.llm import LLMClient
 
 _CN_NUMBERS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+_DEVICE_COUNT_FIELDS = (
+    "stove_count",
+    "steamer_count",
+    "oven_count",
+    "refrigerator_count",
+    "dishwasher_count",
+    "range_hood_count",
+    "water_purifier_count",
+)
 
 
 def _number(value: str) -> int | None:
@@ -54,15 +63,24 @@ def _valid_time(value: Any) -> str | None:
     return value
 
 
-def _catalog_index() -> tuple[list[dict[str, str]], dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+def _catalog_index() -> tuple[list[dict[str, str]], dict[str, dict[str, str]], dict[str, list[dict[str, str]]]]:
     catalog = [
         {"recipe_id": str(item["recipe_id"]), "name": str(item["name"])}
         for item in list_recipe_summaries()["recipes"]
     ]
-    return catalog, {item["recipe_id"]: item for item in catalog}, {item["name"]: item for item in catalog}
+    by_name: dict[str, list[dict[str, str]]] = {}
+    for item in catalog:
+        by_name.setdefault(item["name"], []).append(item)
+    return catalog, {item["recipe_id"]: item for item in catalog}, by_name
 
 
-def _sanitize_recipes(value: Any, by_id: dict[str, dict[str, str]], by_name: dict[str, dict[str, str]]) -> list[dict[str, str]]:
+def _sanitize_recipes(
+    value: Any,
+    by_id: dict[str, dict[str, str]],
+    by_name: dict[str, list[dict[str, str]]],
+    *,
+    rejected_names: list[str] | None = None,
+) -> list[dict[str, str]]:
     if not isinstance(value, list):
         return []
     selected: list[dict[str, str]] = []
@@ -70,8 +88,18 @@ def _sanitize_recipes(value: Any, by_id: dict[str, dict[str, str]], by_name: dic
     for raw in value:
         if not isinstance(raw, dict):
             continue
-        recipe = by_id.get(str(raw.get("recipe_id") or "")) or by_name.get(str(raw.get("name") or ""))
-        if recipe is None or recipe["recipe_id"] in seen:
+        recipe_id = str(raw.get("recipe_id") or "").strip()
+        name = str(raw.get("name") or "").strip()
+        if recipe_id:
+            recipe = by_id.get(recipe_id)
+        else:
+            name_matches = by_name.get(name, [])
+            recipe = name_matches[0] if len(name_matches) == 1 else None
+        if recipe is None:
+            if rejected_names is not None and (name or recipe_id):
+                rejected_names.append((name or recipe_id)[:80])
+            continue
+        if recipe["recipe_id"] in seen:
             continue
         seen.add(recipe["recipe_id"])
         selected.append(dict(recipe))
@@ -86,15 +114,13 @@ def _missing_fields(draft: dict[str, Any]) -> list[str]:
         missing.append("target_time")
     if not draft["operator_count"]:
         missing.append("operator_count")
-    for field in ("stove_count", "steamer_count", "oven_count"):
+    for field in _DEVICE_COUNT_FIELDS:
         if field not in draft["devices"]:
             missing.append(field)
     return missing
 
 
-def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str]) -> str:
-    if isinstance(value, str) and 1 <= len(value.strip()) <= 300:
-        return value.strip()
+def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str], unmatched_names: list[str]) -> str:
     labels = {
         "recipes": "请告诉我想做的 3～5 道菜（需来自菜谱库）。",
         "target_time": "希望几点开饭？",
@@ -102,9 +128,18 @@ def _safe_reply(value: Any, draft: dict[str, Any], missing: list[str]) -> str:
         "stove_count": "有几个可用灶眼？没有也可以说 0 个。",
         "steamer_count": "有几台蒸箱？没有也可以说 0 台。",
         "oven_count": "有几台烤箱？没有也可以说 0 台。",
+        "refrigerator_count": "有几台冰箱？没有也可以说 0 台。",
+        "dishwasher_count": "有几台洗碗机？没有也可以说 0 台。",
+        "range_hood_count": "有几台烟机？没有也可以说 0 台。",
+        "water_purifier_count": "有几台净水机或净咖一体机？没有也可以说 0 台。",
     }
+    if unmatched_names:
+        names = "、".join(unmatched_names[:5])
+        return f"以下菜品暂时无法从官方菜谱库中唯一确认：{names}。请重新选择，或补充能唯一确认的菜品信息。"
     if missing:
         return "我已经记下现有信息。" + "".join(labels[item] for item in missing[:2])
+    if isinstance(value, str) and 1 <= len(value.strip()) <= 300:
+        return value.strip()
     return f"我理解了：{draft['target_time']} 开饭，{draft['operator_count']} 人操作，共 {len(draft['recipes'])} 道菜。请确认后生成计划。"
 
 
@@ -125,13 +160,19 @@ def interpret_plan(payload: dict[str, Any], *, client: LLMClient) -> dict[str, A
     raw_draft = raw.get("draft") if isinstance(raw.get("draft"), dict) else {}
 
     previous_recipes = _sanitize_recipes(context.get("recipes"), by_id, by_name)
-    recipes = _sanitize_recipes(raw_draft.get("recipes"), by_id, by_name) or previous_recipes
+    rejected_recipe_names: list[str] = []
+    recipes = _sanitize_recipes(
+        raw_draft.get("recipes"),
+        by_id,
+        by_name,
+        rejected_names=rejected_recipe_names,
+    ) or previous_recipes
     target_time = _valid_time(raw_draft.get("target_time")) or _valid_time(context.get("target_time"))
     operator_count = _valid_count(raw_draft.get("operator_count"), allow_zero=False) or _valid_count(context.get("operator_count"), allow_zero=False)
     previous_devices = context.get("devices") if isinstance(context.get("devices"), dict) else {}
     raw_devices = raw_draft.get("devices") if isinstance(raw_draft.get("devices"), dict) else {}
     devices: dict[str, int] = {}
-    for field in ("stove_count", "steamer_count", "oven_count"):
+    for field in _DEVICE_COUNT_FIELDS:
         count = _valid_count(raw_devices.get(field), allow_zero=True)
         if count is None:
             count = _valid_count(previous_devices.get(field), allow_zero=True)
@@ -141,18 +182,20 @@ def interpret_plan(payload: dict[str, Any], *, client: LLMClient) -> dict[str, A
     draft = {"recipes": recipes, "target_time": target_time, "operator_count": operator_count, "devices": devices}
     missing = _missing_fields(draft)
     unmatched = raw.get("unmatched_recipe_names")
-    unmatched_names = [str(item)[:80] for item in unmatched if isinstance(item, str) and item.strip()][:5] if isinstance(unmatched, list) else []
+    model_unmatched = [str(item).strip()[:80] for item in unmatched if isinstance(item, str) and item.strip()] if isinstance(unmatched, list) else []
+    unmatched_names = list(dict.fromkeys([*model_unmatched, *rejected_recipe_names]))[:5]
+    blocked = bool(missing or unmatched_names)
     return {
         "intent": "create_schedule",
-        "reply": _safe_reply(raw.get("reply"), draft, missing),
+        "reply": _safe_reply(raw.get("reply"), draft, missing, unmatched_names),
         "draft": draft,
         "missing_fields": missing,
         "unmatched_recipe_names": unmatched_names,
-        "ready_to_confirm": not missing,
+        "ready_to_confirm": not blocked,
         "tool_trace": [
             {"name": "understand_request", "status": "completed", "label": "大模型已理解本轮需求"},
             {"name": "match_recipes", "status": "completed", "label": f"菜谱库已确认 {len(recipes)} 道菜"},
-            {"name": "validate_draft", "status": "waiting" if missing else "completed", "label": "规划字段等待补充" if missing else "规划字段校验通过"},
+            {"name": "validate_draft", "status": "waiting" if blocked else "completed", "label": "规划字段等待补充" if blocked else "规划字段校验通过"},
         ],
     }
 

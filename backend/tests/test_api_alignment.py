@@ -36,6 +36,8 @@ def test_list_recipes_returns_summaries():
     assert body["schema_version"] == "1.0"
     assert body["total"] == 100
     assert len(body["recipes"]) == 100
+    assert len({recipe["recipe_id"] for recipe in body["recipes"]}) == 100
+    assert len({recipe["name"] for recipe in body["recipes"]}) == 99
     summary = body["recipes"][0]
     assert {"recipe_id", "name", "ingredient_count", "step_count"} <= set(summary)
     assert summary["step_count"] >= 1
@@ -50,6 +52,23 @@ def test_list_recipes_supports_limit_and_name_filter():
     assert filtered.status_code == 200
     names = [item["name"] for item in filtered.json()["recipes"]]
     assert names and all("鸡翅" in name for name in names)
+
+
+def test_duplicate_recipe_names_are_preserved_and_retrievable_by_id():
+    expected_ids = {"58e70b129f6429675ec80601", "5fe197255f8f38795ea6fe79"}
+    response = client.get("/recipes", params={"q": "麻辣对虾"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert len(body["recipes"]) == 2
+    assert {recipe["recipe_id"] for recipe in body["recipes"]} == expected_ids
+    assert all(recipe["name"] == "麻辣对虾" for recipe in body["recipes"])
+
+    for recipe_id in expected_ids:
+        detail = client.get(f"/recipes/{recipe_id}")
+        assert detail.status_code == 200
+        assert detail.json()["recipe_id"] == recipe_id
+        assert detail.json()["name"] == "麻辣对虾"
 
 
 def test_get_recipe_returns_parseable_payload_and_parse_succeeds():
