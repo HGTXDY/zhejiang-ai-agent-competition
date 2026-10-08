@@ -27,6 +27,7 @@ const validPlan = {
 
 function start() {
   render(<AgentPlanner
+    step="recipes"
     catalog={[]}
     loading={false}
     modelReady={true}

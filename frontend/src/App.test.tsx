@@ -65,7 +65,12 @@ it('does not show manual progress in Agent planning', async () => {
   const App = (await import('./App')).default
   render(<App />)
   fireEvent.click(await screen.findByRole('button', { name: /AGENT 智能规划/ }))
-  expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
+  const stepper = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
+  expect(stepper.getAllByRole('button')).toHaveLength(3)
+  expect(stepper.getByRole('button', { name: /收集需求/ })).toBeInTheDocument()
+  expect(stepper.getByRole('button', { name: /确认信息/ })).toBeInTheDocument()
+  expect(stepper.getByRole('button', { name: /开始做饭/ })).toBeInTheDocument()
+  expect(stepper.queryByRole('button', { name: /选择菜谱|厨房条件|确认步骤/ })).not.toBeInTheDocument()
   expect(screen.queryByText('/ 5 道已选')).not.toBeInTheDocument()
 })
 
