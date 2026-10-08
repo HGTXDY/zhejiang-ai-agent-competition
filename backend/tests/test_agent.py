@@ -25,9 +25,9 @@ def _configured_client(monkeypatch, replies: list[dict]):
     return TestClient(create_app())
 
 
-def _reply(*, recipes, target_time=None, operator_count=None, devices=None, reply="好的", unmatched_recipe_names=None):
+def _reply(*, recipes, target_time=None, operator_count=None, devices=None, reply="好的", unmatched_recipe_names=None, intent="create_schedule"):
     return {
-        "intent": "create_schedule",
+        "intent": intent,
         "reply": reply,
         "draft": {
             "recipes": recipes,
@@ -45,6 +45,64 @@ def test_agent_plan_requires_configured_model(monkeypatch):
     response = TestClient(create_app()).post("/agent/plan", json={"message": "帮我安排晚饭"})
     assert response.status_code == 422
     assert "模型尚未配置" in response.json()["detail"]
+
+
+def test_agent_plan_answers_catalog_question_without_forcing_planning_fields(monkeypatch):
+    natural_reply = "菜谱库里有鸡翅包饭、苹果芒果派、低温牛排等 100 道菜。你偏爱肉菜、海鲜还是甜点？我可以再帮你缩小范围。"
+    client = _configured_client(monkeypatch, [
+        _reply(
+            intent="answer_question",
+            recipes=[],
+            reply=natural_reply,
+            unmatched_recipe_names=["用户只是询问的菜名"],
+        )
+    ])
+    body = client.post("/agent/plan", json={"message": "你们菜谱里有什么菜？"}).json()
+    assert body["intent"] == "answer_question"
+    assert body["reply"] == natural_reply
+    assert body["draft"]["recipes"] == []
+    assert body["unmatched_recipe_names"] == []
+    assert body["ready_to_confirm"] is False
+    assert body["tool_trace"][1]["label"] == "已参考官方菜谱库回答"
+
+
+def test_agent_catalog_question_keeps_a_complete_existing_plan_confirmable(monkeypatch):
+    selected = [
+        {"recipe_id": "6510fb3545256c3ad7c25c9c", "name": "苹果芒果派"},
+        {"recipe_id": "661369554b3d03197733ac5a", "name": "香烤排骨"},
+        {"recipe_id": "58e70b129f6429675ec80601", "name": "麻辣对虾"},
+    ]
+    client = _configured_client(monkeypatch, [
+        _reply(intent="answer_question", recipes=[], reply="还有鸡翅包饭和低温牛排。")
+    ])
+    context = {
+        "recipes": selected,
+        "target_time": "18:30",
+        "operator_count": 1,
+        "devices": FULL_DEVICES,
+    }
+    body = client.post("/agent/plan", json={"message": "还有什么菜？", "context": context}).json()
+    assert body["intent"] == "answer_question"
+    assert body["draft"] == context
+    assert body["ready_to_confirm"] is True
+
+
+def test_agent_plan_keeps_natural_model_followup_when_plan_is_incomplete(monkeypatch):
+    natural_reply = "这三道菜我找到了。你想几点开饭，今天有几个人一起做？"
+    client = _configured_client(monkeypatch, [
+        _reply(
+            recipes=[
+                {"recipe_id": "6510fb3545256c3ad7c25c9c", "name": "苹果芒果派"},
+                {"recipe_id": "661369554b3d03197733ac5a", "name": "香烤排骨"},
+                {"recipe_id": "58e70b129f6429675ec80601", "name": "麻辣对虾"},
+            ],
+            reply=natural_reply,
+        )
+    ])
+    body = client.post("/agent/plan", json={"message": "我想做苹果芒果派、香烤排骨和麻辣对虾"}).json()
+    assert body["intent"] == "create_schedule"
+    assert body["reply"] == natural_reply
+    assert body["ready_to_confirm"] is False
 
 
 def test_agent_plan_rejects_invented_recipe_id_even_with_three_valid_recipes(monkeypatch):

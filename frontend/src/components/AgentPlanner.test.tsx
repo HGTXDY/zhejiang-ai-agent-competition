@@ -47,6 +47,41 @@ function send(message: string) {
 beforeEach(() => { mockedInterpret.mockReset() })
 afterEach(cleanup)
 
+it('answers a catalog question without turning it into a missing-fields form', async () => {
+  mockedInterpret.mockResolvedValueOnce({
+    intent: 'answer_question',
+    reply: '菜谱库里有鸡翅包饭、苹果芒果派和低温牛排等菜，你偏爱哪一类？',
+    draft: { recipes: [], target_time: null, operator_count: null, devices: {} },
+    missing_fields: ['recipes', 'target_time', 'operator_count'],
+    unmatched_recipe_names: [],
+    ready_to_confirm: false,
+    tool_trace: [],
+  })
+  start()
+
+  send('菜谱里有什么菜？')
+
+  await screen.findByText('菜谱库里有鸡翅包饭、苹果芒果派和低温牛排等菜，你偏爱哪一类？')
+  expect(screen.getByText('先说说你的做饭需求')).toBeInTheDocument()
+  expect(screen.queryByText('还需要补充信息，请直接在左侧继续回答。')).not.toBeInTheDocument()
+})
+
+it('shows an animated thinking status while the model request is pending', async () => {
+  let resolveRequest!: (value: AgentPlanResponse) => void
+  mockedInterpret.mockImplementationOnce(() => new Promise(resolve => { resolveRequest = resolve }))
+  start()
+
+  send('今晚六点半开饭')
+
+  expect(screen.getByRole('status', { name: '灶序正在思考' })).toBeInTheDocument()
+  expect(screen.getByText('正在理解你的需求')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /理解中/ })).toBeDisabled()
+
+  resolveRequest(validPlan)
+  await screen.findByText('还需要补充开饭时间。')
+  expect(screen.queryByRole('status', { name: '灶序正在思考' })).not.toBeInTheDocument()
+})
+
 it('keeps the last valid draft and explains a temporary model failure', async () => {
   mockedInterpret.mockResolvedValueOnce(validPlan)
     .mockRejectedValueOnce(new ProductApiError('模型服务连接意外中断，请稍后重试', 502, 'HTTP_ERROR'))
