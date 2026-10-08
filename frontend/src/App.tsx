@@ -3,14 +3,14 @@ import ExecutionDashboard from './components/ExecutionDashboard'
 import ModelSettingsDialog from './components/ModelSettingsDialog'
 import PlanningModeChooser from './components/PlanningModeChooser'
 import AgentPlanner from './components/AgentPlanner'
-import { api, apiMode } from './api/client'
+import { api } from './api/client'
 import { recipeCatalog as mockCatalog } from './mock/recipes'
 import { createMockSchedule, validateProductRequest } from './mock/product'
 import { productApi, productErrorMessage, assertSelection } from './api/product'
 import type { ModelSettings, ModelSettingsUpdate, ParseResult, ParsedTask } from './api/product'
 import type { DashboardSchedule } from './types/contracts'
 import type { KitchenConfig, RecipeSummary } from './types/product'
-import { apiModeLabel, formatDevice, formatDuration, formatMode } from './lib/presentation'
+import { formatDevice, formatDuration, formatMode } from './lib/presentation'
 import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
@@ -159,14 +159,15 @@ export default function App() {
     recipes={recipeCatalog}
     onBackToPlanner={() => { setSchedule(null); setExecutionStarted(false); setManualFlow(false); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setPlanningMode('choose'); setStep('recipes') }}
   />
-  return <main className="product-shell">
+  return <main className={`product-shell product-shell-${planningMode}`}>
     <header className="product-topbar">
-      <div className="brand"><div className="brand-mark" aria-hidden="true">灶</div><div><strong>灶序</strong><span>智能做饭指挥台</span></div></div>
+      <div className="brand"><div className="brand-mark" aria-hidden="true">灶</div><div><strong>灶序・CookFlow</strong><span>智能做饭指挥台</span></div></div>
       <div className="topbar-actions">
-        <div className="product-status"><span className="status-dot" />{apiModeLabel(apiMode)} · 可以开始规划</div>
+        <div className="product-status"><span className="status-dot" />服务已连接</div>
+        <div className="model-mode-status"><span className={modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? 'model-pulse active' : 'model-pulse warning') : 'model-pulse'} />{modelSettings.parser_provider === 'llm' && modelSettings.ready ? '智能模式' : '稳定模式'}</div>
         <button type="button" className="model-settings-trigger" aria-label="打开智能解析设置" onClick={() => setModelSettingsOpen(true)}>
-          <span className={modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? 'model-pulse active' : 'model-pulse warning') : 'model-pulse'} />
-          <span className="model-trigger-copy"><small>菜谱理解</small><strong>{modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? '智能模式' : '尚未连接') : '稳定模式'}</strong></span><b>设置</b>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>
+          <span>设置</span>
         </button>
       </div>
     </header>
@@ -176,6 +177,7 @@ export default function App() {
         <div className="selection-count" aria-label={`已选择 ${selected.length} 道菜，最多 5 道`}><strong>{selected.length}</strong><span>/ 5 道已选</span></div>
       </div>}
       <div className="product-messages">{validationErrors.length > 0 && <div className="product-alert error-banner">⚠ {validationErrors.map(error => <span key={error}>{error}</span>)}</div>}{warnings.length > 0 && <div className="product-alert warning-banner">△ {warnings.map(warning => <span key={warning}>{warning}</span>)}</div>}{catalogLoading && <p role="status">正在加载菜谱…</p>}{catalogError && <div className="error-banner">{catalogError}<button onClick={() => setRetry(value => value + 1)}>重新加载</button></div>}</div>
+      {planningMode === 'choose' && <div className="choose-intro"><div className="choose-intro-copy"><span className="choose-intro-label">COOKFLOW / PLANNING DESK</span><p>两种方式，同一份清晰、可执行的做饭计划。</p></div></div>}
       {planningMode === 'choose' && <PlanningModeChooser onAgent={() => { setManualFlow(false); setPlanningMode('agent') }} onManual={() => { setManualFlow(true); setPlanningMode('manual') }} />}
       {planningMode === 'agent' && <AgentPlanner catalog={recipeCatalog} loading={loading} modelReady={isHttp && modelSettings.ready} offlineDemo={!isHttp} onOpenSettings={() => setModelSettingsOpen(true)} onBack={() => setPlanningMode('choose')} onConfirm={confirmAgentPlan} />}
       {planningMode === 'manual' && step === 'recipes' && <RecipeStep recipes={visibleRecipes} selected={selected} selectedIds={selectedIds} query={query} loading={loading || catalogLoading} onQuery={setQuery} onToggle={toggleRecipe} onNext={() => void continueToKitchen()} />}

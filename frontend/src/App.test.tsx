@@ -37,11 +37,16 @@ it('keeps the landing page free of manual progress and moves it into manual conf
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
-  await screen.findByText(/演示模式/)
+  await screen.findByText('服务已连接')
 
   expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
   expect(screen.queryByText('/ 5 道已选')).not.toBeInTheDocument()
   expect(screen.queryByText('准时开饭。')).not.toBeInTheDocument()
+  expect(screen.getByText('灶序・CookFlow')).toBeInTheDocument()
+  expect(screen.getByText('自然语言驱动规划')).toBeInTheDocument()
+  expect(screen.getByText('自定义时序编排')).toBeInTheDocument()
+  expect(screen.getByText('开始规划')).toBeInTheDocument()
+  expect(screen.getByText('进入编排')).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
   const steps = within(screen.getByRole('navigation', { name: '排程创建步骤' }))
@@ -59,7 +64,7 @@ it('does not show manual progress in Agent planning', async () => {
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
-  fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /AGENT 智能规划/ }))
   expect(screen.queryByRole('navigation', { name: '排程创建步骤' })).not.toBeInTheDocument()
   expect(screen.queryByText('/ 5 道已选')).not.toBeInTheDocument()
 })
@@ -68,7 +73,7 @@ it('manual selection requires 3 dishes, allows 3-5, and never selects a sixth di
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
-  await screen.findByText(/演示模式/)
+  await screen.findByText('服务已连接')
 
   fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
   const next = screen.getByRole('button', { name: /下一步：配置厨房/ })
@@ -176,7 +181,7 @@ it.each(['mock', undefined])('Mock (%s): completes selection, kitchen, confirmat
   vi.stubGlobal('fetch', fetcher)
   const App = (await import('./App')).default
   render(<App />)
-  await screen.findByText(/演示模式/)
+  await screen.findByText('服务已连接')
   await flow(recipeCatalog.slice(0, 3).map(recipe => recipe.name))
   for (const recipe of recipeCatalog.slice(0, 3)) expect(screen.getAllByRole('button', { name: new RegExp(`${recipe.name}备料`) })[0]).toBeInTheDocument()
   expect(fetcher).not.toHaveBeenCalled()
@@ -186,7 +191,7 @@ it('requires a configured model before enabling the Agent conversation', async (
   vi.stubEnv('VITE_API_MODE', 'mock')
   const App = (await import('./App')).default
   render(<App />)
-  fireEvent.click(await screen.findByRole('button', { name: /Agent 智能规划/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /AGENT 智能规划/ }))
   expect(screen.getByText('说完需求，我来安排')).toBeInTheDocument()
   expect(screen.getByText('如果使用此功能，请先到右上角的设置配置大模型哦！')).toBeInTheDocument()
   expect(screen.getByLabelText('告诉智能助手你的做饭需求')).toBeDisabled()
