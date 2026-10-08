@@ -88,7 +88,7 @@ describe('ExecutionDashboard', () => {
   it('can return to the planner from the execution view', () => {
     const onBackToPlanner = vi.fn()
     render(<ExecutionDashboard onBackToPlanner={onBackToPlanner} />)
-    fireEvent.click(screen.getByRole('button', { name: /返回选菜/ }))
+    fireEvent.click(screen.getByRole('button', { name: /返回计划/ }))
     expect(onBackToPlanner).toHaveBeenCalledOnce()
   })
 

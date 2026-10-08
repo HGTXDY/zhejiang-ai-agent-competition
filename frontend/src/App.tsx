@@ -170,7 +170,7 @@ export default function App() {
   if (step === 'result' && schedule && executionStarted) return <ExecutionDashboard
     initialSchedule={schedule}
     recipes={recipeCatalog}
-    onBackToPlanner={() => { setSchedule(null); setExecutionStarted(false); setManualFlow(false); setParsed([]); setConfirmed(false); setValidationErrors([]); setWarnings([]); setPlanSource('manual'); setPlanningMode('choose'); setStep('recipes') }}
+    onBackToPlanner={() => setExecutionStarted(false)}
   />
   return <main className={`product-shell product-shell-${planningMode}`}>
     <header className="product-topbar">
