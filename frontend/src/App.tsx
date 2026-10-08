@@ -11,6 +11,7 @@ import type { ModelSettings, ModelSettingsUpdate, ParseResult, ParsedTask } from
 import type { DashboardSchedule } from './types/contracts'
 import type { KitchenConfig, RecipeSummary } from './types/product'
 import { formatDevice, formatDuration, formatMode } from './lib/presentation'
+import { clearSession, loadSession, saveSession } from './lib/persistence'
 import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
@@ -30,27 +31,28 @@ const isHttp = import.meta.env.VITE_API_MODE === 'http'
 const mockModelSettings: ModelSettings = { parser_provider: 'deterministic', configured: false, ready: false, base_url: null, model: 'gpt-4o-mini', api_key_masked: null, source: 'runtime', notes: [] }
 
 export default function App() {
+  const [saved] = useState(() => loadSession())
   const [recipeCatalog, setRecipeCatalog] = useState<RecipeSummary[]>([])
-  const [parsed, setParsed] = useState<ParseResult[]>([])
-  const [confirmed, setConfirmed] = useState(false)
+  const [parsed, setParsed] = useState<ParseResult[]>(saved?.parsed ?? [])
+  const [confirmed, setConfirmed] = useState(saved?.confirmed ?? false)
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState('')
   const [retry, setRetry] = useState(0)
   const [modelSettings, setModelSettings] = useState<ModelSettings>(mockModelSettings)
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false)
   const [modelBusy, setModelBusy] = useState(false)
-  const [step, setStep] = useState<ProductStep>('recipes')
-  const [planningMode, setPlanningMode] = useState<PlanningMode>('choose')
-  const [planSource, setPlanSource] = useState<PlanSource>('manual')
-  const [manualFlow, setManualFlow] = useState(false)
+  const [step, setStep] = useState<ProductStep>(saved?.step ?? 'recipes')
+  const [planningMode, setPlanningMode] = useState<PlanningMode>(saved?.planningMode ?? 'choose')
+  const [planSource, setPlanSource] = useState<PlanSource>(saved?.planSource ?? 'manual')
+  const [manualFlow, setManualFlow] = useState(saved?.manualFlow ?? false)
   const [query, setQuery] = useState('')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [kitchen, setKitchen] = useState(defaultKitchen)
+  const [selectedIds, setSelectedIds] = useState<string[]>(saved?.selectedIds ?? [])
+  const [kitchen, setKitchen] = useState<KitchenConfig>(saved?.kitchen ?? defaultKitchen)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [schedule, setSchedule] = useState<DashboardSchedule | null>(null)
-  const [executionStarted, setExecutionStarted] = useState(false)
+  const [schedule, setSchedule] = useState<DashboardSchedule | null>(saved?.schedule ?? null)
+  const [executionStarted, setExecutionStarted] = useState(saved?.executionStarted ?? false)
 
   useEffect(() => {
     if (!isHttp) { setRecipeCatalog(mockCatalog); setCatalogLoading(false); return }
@@ -62,6 +64,10 @@ export default function App() {
     void productApi.getModelSettings().then(settings => { if (active) setModelSettings(settings) }).catch(() => undefined)
     return () => { active = false }
   }, [retry])
+
+  useEffect(() => {
+    saveSession({ planningMode, planSource, manualFlow, step, selectedIds, kitchen, parsed, confirmed, schedule, executionStarted })
+  }, [planningMode, planSource, manualFlow, step, selectedIds, kitchen, parsed, confirmed, schedule, executionStarted])
 
   const selected = useMemo(() => selectedIds.map(id => recipeCatalog.find(recipe => recipe.recipe_id === id)).filter(Boolean) as RecipeSummary[], [selectedIds, recipeCatalog])
   const visibleSteps = planSource === 'agent' ? agentSteps : productSteps
@@ -129,6 +135,13 @@ export default function App() {
   function reviseGeneratedPlan() {
     setSchedule(null); setExecutionStarted(false); setConfirmed(false); setStep(planSource === 'agent' ? 'recipes' : 'kitchen')
   }
+  function resetPlanning() {
+    if (!window.confirm('确定要重置所有计划数据吗？已选的菜谱、厨房条件和生成的排程都会被清空。')) return
+    clearSession()
+    setStep('recipes'); setPlanningMode('choose'); setPlanSource('manual'); setManualFlow(false); setQuery('')
+    setSelectedIds([]); setKitchen(defaultKitchen); setParsed([]); setConfirmed(false); setSchedule(null); setExecutionStarted(false)
+    setValidationErrors([]); setWarnings([])
+  }
   async function updateModelSettings(payload: ModelSettingsUpdate) {
     setModelBusy(true)
     try { setModelSettings((isHttp ? await productApi.updateModelSettings(payload) : { ...modelSettings, ...payload, configured: false, ready: false }) as ModelSettings); setParsed([]); setConfirmed(false) }
@@ -178,6 +191,7 @@ export default function App() {
       <div className="topbar-actions">
         <div className="product-status"><span className="status-dot" />服务已连接</div>
         <div className="model-mode-status"><span className={modelSettings.parser_provider === 'llm' ? (modelSettings.ready ? 'model-pulse active' : 'model-pulse warning') : 'model-pulse'} />{modelSettings.parser_provider === 'llm' && modelSettings.ready ? '智能模式' : '稳定模式'}</div>
+        <button type="button" className="reset-trigger" onClick={resetPlanning}>重置</button>
         <button type="button" className="model-settings-trigger" aria-label="打开智能解析设置" onClick={() => setModelSettingsOpen(true)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>
           <span>设置</span>
