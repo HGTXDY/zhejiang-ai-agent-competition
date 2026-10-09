@@ -29,6 +29,7 @@ const current: DashboardSchedule = {
   notifications: [],
   resources: [{ id: 'stove_1', label: '灶具 · 01', tone: 'gold' }],
   target_time: '12:30',
+  target_ready_at: '2026-09-27T12:30:00Z',
 }
 
 const event: ReplanEvent = {
@@ -48,6 +49,7 @@ describe('toReplanEnvelope', () => {
     const currentSchedule = envelope.current_schedule as Record<string, unknown>
     expect(currentSchedule).not.toHaveProperty('resources')
     expect(currentSchedule).not.toHaveProperty('target_time')
+    expect(currentSchedule).not.toHaveProperty('target_ready_at')
   })
 
   it('strips the UI-only action and dish name fields from every task', () => {

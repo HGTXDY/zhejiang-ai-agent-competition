@@ -56,13 +56,14 @@ const toResult = (response: ReplanResponse, request: ScheduleRequest, dishName?:
 
 /** Build the V1 replan envelope, stripping UI-only fields from the schedule.
  *
- * `DashboardSchedule` adds a top-level `resources` field (and each task adds an
- * `action` label) that are not part of `schedule-response.schema.json`, whose
- * top level is `additionalProperties: false`. The replan request must therefore
- * send only the standard V1 `ScheduleResponse` fields or the schema rejects it.
+ * `DashboardSchedule` adds top-level `resources`, `target_time` and
+ * `target_ready_at` fields (and each task adds `action`/`dish_name` labels)
+ * that are not part of `schedule-response.schema.json`, whose top level is
+ * `additionalProperties: false`. The replan request must therefore send only
+ * the standard V1 `ScheduleResponse` fields or the schema rejects it.
  */
 export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRequest, current: DashboardSchedule): Record<string, unknown> => {
-  const { resources: _resources, target_time: _targetTime, ...standardSchedule } = current
+  const { resources: _resources, target_time: _targetTime, target_ready_at: _targetReadyAt, ...standardSchedule } = current
   return {
     event,
     schedule_request: scheduleRequest,
