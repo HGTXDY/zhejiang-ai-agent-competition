@@ -23,7 +23,7 @@ from typing import Any
 
 # Ordered device nouns: explicit equipment beats generic cooking verbs.
 _DEVICE_NOUNS: list[tuple[str, str]] = [
-    ("烤箱|烤盘|烘焙", "oven"),
+    ("烤箱|烤盘|烘焙(?!纸)", "oven"),
     ("蒸箱|蒸锅|蒸笼", "steamer"),
     ("洗碗机", "dishwasher"),
     ("冰箱|冷藏|冷冻|解冻", "refrigerator"),
@@ -149,8 +149,24 @@ _MANUAL_ACTIONS = re.compile(r"切|剁|洗|拌|搅|翻|放|取|捞|盛|装|封|�
 _WAIT_KEYWORDS = re.compile(r"静置|醒发|发酵|松弛|饧|浸泡|泡发|泡软|晾")
 
 _TEMPERATURE = re.compile(r"(\d+)\s*(?:℃|°C|°c|摄氏度|度)")
-_DURATION_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(小时|分钟|秒)")
+_DURATION_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:个\s*)?(小时|分钟|秒|hr|h|min)", re.I)
 _HALF_MINUTE = re.compile(r"半分钟")
+_HALF_HOUR = re.compile(r"半(?:个)?小时")
+
+# Split only an explicitly timed storage/rest phase preceded by real preparation.
+# This avoids treating every long cooking task (e.g. a two-hour braise) as advance
+# preparation. The split remains a chain within the same original recipe step.
+_TIMED_HOLD = re.compile(
+    r"(?P<action>冷冻|冷藏|腌制|腌渍|浸泡|泡发|静置|醒发|发酵)"
+    r"(?P<between>\s*(?:(?:约|大约|至少|需)\s*)?)"
+    r"(?P<duration>(?:\d+(?:\.\d+)?\s*(?:个\s*)?(?:小时|分钟|hr|h|min)|半(?:个)?小时))",
+    re.I,
+)
+_DEVICE_ENTRY = re.compile(r"(?:放入?|放进|置于|送入|进|移入)\s*(?:冰箱|冷藏室|冷冻室)\s*$")
+_HOLD_CONDITION = re.compile(r"(?:常温|室温|冷水|温水)\s*$")
+_PREP_ACTION = re.compile(r"洗|切|剁|拌|搅|揉|抓|裹|包|刷|抹|擀|剥|压|混合|加|剪|捏|过筛|铺|摆|装")
+# An explicit post-hold action must not execute during the holding interval.
+_AFTER_HOLD = re.compile(r"[，,。]\s*(?=取出|捞出|挤干|沥干|切|洗|拌|搅|摆|装盘)")
 
 
 def extract_duration_sec(text: str) -> int | None:
@@ -160,11 +176,58 @@ def extract_duration_sec(text: str) -> int | None:
     if _HALF_MINUTE.search(text):
         total += 30
         found = True
+    if _HALF_HOUR.search(text):
+        total += 1800
+        found = True
     for value, unit in _DURATION_UNIT.findall(text):
-        seconds = float(value) * {"小时": 3600, "分钟": 60, "秒": 1}[unit]
+        seconds = float(value) * {"小时": 3600, "h": 3600, "hr": 3600,
+                                  "分钟": 60, "min": 60, "秒": 1}[unit.lower()]
         total += int(round(seconds))
         found = True
     return total if found else None
+
+
+def _split_timed_hold(text: str) -> list[tuple[str, bool]] | None:
+    """Separate hands-on preparation from a timed hold, conservatively.
+
+    The source can contain manual preparation, an explicit rest/storage interval,
+    and sometimes a follow-up manual action. If another timed operation occurs
+    after the interval, leave the step intact rather than invent a sequence.
+    Returns (action, force_wait) pairs, or None if the split is uncertain.
+    """
+    match = _TIMED_HOLD.search(text)
+    if match is None:
+        return None
+
+    before = text[:match.start("action")]
+    entry = _DEVICE_ENTRY.search(before)
+    condition = _HOLD_CONDITION.search(before) if not entry else None
+    if entry or condition:
+        boundary = (entry or condition).start()
+        before = text[:boundary]
+        hold_start = boundary
+    else:
+        hold_start = match.start("action")
+    before = before.strip(" ，,。；; ")
+    if not before or not _PREP_ACTION.search(before):
+        return None
+
+    # Do not mistake an unrelated later duration for the hold's duration.
+    hold_end = match.end("duration")
+    after_duration = text[hold_end:]
+    if extract_duration_sec(after_duration) is not None:
+        return None
+
+    hold_text = text[hold_start:]
+    followup = _AFTER_HOLD.search(hold_text, match.end("duration") - hold_start)
+    if followup:
+        followup_text = hold_text[followup.end():].strip(" ，,。；; ")
+        hold_text = hold_text[:followup.start()].strip(" ，,。；; ")
+        if followup_text and _PREP_ACTION.search(followup_text):
+            return [(before, False), (hold_text, True), (followup_text, False)]
+
+    hold_text = hold_text.strip(" ，,。；; ")
+    return [(before, False), (hold_text, True)] if hold_text else None
 
 
 def extract_temperature_c(text: str) -> int | None:
@@ -291,24 +354,44 @@ class DeterministicParserAdapter:
 
     provider = "deterministic"
 
-    def __init__(self, *, strict: bool = False) -> None:
+    def __init__(self, *, strict: bool = False, split_compound: bool = True) -> None:
         self.strict = strict
+        self.split_compound = split_compound
 
     def parse(self, recipe: dict[str, Any]) -> list[dict[str, Any]]:
         recipe_id = recipe["recipe_id"]
         tasks: list[dict[str, Any]] = []
         for index, text in enumerate(recipe["steps_text"]):
-            tasks.append(self._parse_step(recipe_id, index, text))
+            segments = _split_timed_hold(text) if self.split_compound else None
+            if segments is None:
+                tasks.append(self._parse_step(recipe_id, index, text))
+                continue
+            for position, (action, force_wait) in enumerate(segments):
+                # Keep the original step ID for its final task; earlier subtasks
+                # get stable suffixes, preserving downstream step references.
+                suffix = "" if position == len(segments) - 1 else ("_prep" if position == 0 else "_hold")
+                tasks.append(
+                    self._parse_step(
+                        recipe_id, index, action, suffix=suffix, force_wait=force_wait,
+                        # '取出冰箱的面团再擀开' uses no fridge time; it is
+                        # manual work, not a second refrigerator occupancy.
+                        force_manual=position == 0 and bool(re.search(r"(?:取出冰箱|从冰箱|冰箱的)", action))
+                        and not bool(re.search(r"冷藏|冷冻|解冻|放入冰箱|放冰箱", action)),
+                    )
+                )
         for index, task in enumerate(tasks):
             if index > 0:
                 task["predecessors"] = [tasks[index - 1]["task_id"]]
         return tasks
 
-    def _parse_step(self, recipe_id: str, index: int, text: str) -> dict[str, Any]:
-        task_id = f"{recipe_id}_{index:02d}"
+    def _parse_step(
+        self, recipe_id: str, index: int, text: str, *, suffix: str = "", force_wait: bool = False,
+        force_manual: bool = False,
+    ) -> dict[str, Any]:
+        task_id = f"{recipe_id}_{index:02d}{suffix}"
         duration = extract_duration_sec(text)
-        device_type = detect_device_type(text)
-        is_wait = device_type is None and _is_wait(text)
+        device_type = None if force_manual else detect_device_type(text)
+        is_wait = device_type is None and not force_manual and (force_wait or _is_wait(text))
 
         base: dict[str, Any] = {
             "schema_version": "1.0",

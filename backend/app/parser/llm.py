@@ -244,7 +244,9 @@ class LLMParserAdapter:
     ) -> None:
         self.client = client if client is not None else self._default_client()
         self.strict = strict
-        self._fallback = fallback or DeterministicParserAdapter(strict=strict)
+        # LLM items are indexed 1:1 to original source steps. Keep that
+        # baseline unchanged while deterministic parsing can split mixed steps.
+        self._fallback = fallback or DeterministicParserAdapter(strict=strict, split_compound=False)
 
     @staticmethod
     def _default_client() -> OpenAICompatClient | None:
