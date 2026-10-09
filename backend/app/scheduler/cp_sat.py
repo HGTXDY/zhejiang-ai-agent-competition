@@ -27,6 +27,7 @@ from app.metrics import (
     serial_baseline_makespan_sec,
 )
 from app.notifications import build_key_node_plan
+from app.scheduler.continuity import fresh_prep_edges, unusually_idle_edges
 
 
 @dataclass(frozen=True)
@@ -406,7 +407,9 @@ def schedule(
     deadline = perf_counter() + max_solve_time_sec
     solved_var_counts: dict[int, int] = {}
 
-    def solve_stage(name: str, incumbent: cp_model.CpSolver | None = None) -> tuple[cp_model.CpSolver | None, int]:
+    def solve_stage(
+        name: str, incumbent: cp_model.CpSolver | None = None, *, time_cap_sec: float | None = None
+    ) -> tuple[cp_model.CpSolver | None, int]:
         prepared_at = perf_counter()
         if use_hints and incumbent is not None:
             # Every phase receives one consistent incumbent, including the
@@ -418,6 +421,8 @@ def schedule(
                 model.AddHint(var, incumbent.Value(var))
         hint_count = len(model.Proto().solution_hint.vars) if stage_diagnostics is not None else 0
         remaining = deadline - perf_counter()
+        if time_cap_sec is not None:
+            remaining = min(remaining, time_cap_sec)
         if remaining <= 0:
             if stage_diagnostics is not None:
                 stage_diagnostics.append({"stage": name, "status": "NO_BUDGET", "solve_ms": 0.0,
@@ -485,6 +490,40 @@ def schedule(
                 all_optimal = False
     else:
         all_optimal = False
+
+    # Optional initial-schedule tie-break: a short washing/cutting task may be
+    # left idle for hours while other dishes cook. Never force it into place.
+    # Only consider a >3-hour DIRECT gap when the three official Level 3
+    # objectives have already been PROVEN optimal. Normal 1-2 hour gaps are
+    # deliberately ignored, as are every dynamic replan and required hold.
+    #
+    # The extra solve receives at most 80 ms INSIDE the existing solve budget,
+    # and only runs with >=1 s spare and total elapsed time under 3.5 s. It
+    # must not jeopardise the <5 s excellent-band target.
+    spare = deadline - perf_counter()
+    if (previous_schedule is None and all_optimal and spare >= 1.0
+            and perf_counter() - started < 3.5):
+        candidate_edges = fresh_prep_edges(tasks)
+        delayed_edges = unusually_idle_edges(candidate_edges, starts, ends, final_solver)
+        if delayed_edges:
+            old_solver = final_solver
+            # The first two objectives have already been pinned by stages 1/2.
+            # The third is pinned here. Thus the tie-break CANNOT trade away
+            # finish spread, makespan, or continuous manual operation.
+            if continuous_manual is not None:
+                model.Add(continuous_manual <= old_solver.Value(continuous_manual))
+            model.ClearObjective()
+            model.Minimize(sum(starts[consumer] - ends[prep] for prep, consumer in delayed_edges))
+            candidate_solver, candidate_status = solve_stage("fresh_prep_tiebreak", old_solver, time_cap_sec=0.08)
+            if candidate_solver is not None and candidate_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                objectives = [finish_spread, makespan]
+                if continuous_manual is not None:
+                    objectives.append(continuous_manual)
+                old_gap = sum(old_solver.Value(starts[c]) - old_solver.Value(ends[p]) for p, c in delayed_edges)
+                new_gap = sum(candidate_solver.Value(starts[c]) - candidate_solver.Value(ends[p]) for p, c in delayed_edges)
+                if (all(candidate_solver.Value(v) == old_solver.Value(v) for v in objectives)
+                        and new_gap < old_gap):
+                    final_solver = candidate_solver
 
     # Replan-only lexicographic tie-break. Never relax the existing Level 3
     # objectives: apply this only after all three stages proved optimal, and
