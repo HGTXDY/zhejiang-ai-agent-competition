@@ -35,7 +35,7 @@ from app.replan import ReplanError, apply_event_to_request, replan
 from app.scheduler import schedule
 from app.store import ScheduleStore, store
 from app.validation import annotate_schedule_result
-from scripts.validate_contracts import validate_schedule_request_business_rules
+from scripts.validate_contracts import describe_business_rule_errors, validate_schedule_request_business_rules
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "contracts" / "v1" / "schemas"
@@ -134,7 +134,7 @@ def _create_schedule(payload: dict[str, Any], registry: ScheduleStore) -> Any:
             request_id,
             "VALIDATION_FAILED",
             "Schedule request violates V1 business rules",
-            [{"code": code, "message": code, "path": None} for code in business_errors],
+            describe_business_rule_errors(payload),
         )
 
     result = schedule(payload)
@@ -331,7 +331,7 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
         errors = validate_schedule_request_business_rules(request)
         if errors:
             return _error_response(request_id, "VALIDATION_FAILED", "Invalid schedule request",
-                                   [{"code": code, "message": code, "path": None} for code in errors])
+                                   describe_business_rule_errors(request))
         confirmed = payload.get("confirmed_advance_task_ids", [])
         if (not isinstance(confirmed, list)
                 or any(not isinstance(task_id, str) for task_id in confirmed)):

@@ -147,6 +147,111 @@ def validate_schedule_request_business_rules(payload: dict[str, Any]) -> list[st
     return list(dict.fromkeys(errors))
 
 
+DEVICE_TYPE_LABELS = {
+    "stove": "灶具",
+    "steamer": "蒸箱",
+    "oven": "烤箱",
+    "refrigerator": "冰箱",
+    "dishwasher": "洗碗机",
+    "range_hood": "烟机",
+    "water_purifier": "净水机",
+}
+
+_DEVICE_CAPABILITY_CODES = {
+    "DEVICE_TYPE_UNAVAILABLE",
+    "DEVICE_MODE_UNSUPPORTED",
+    "DEVICE_TEMPERATURE_UNSUPPORTED",
+    "DEVICE_CAPACITY_INSUFFICIENT",
+}
+
+
+def describe_business_rule_errors(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return business-rule issues as ``{code, message, path}`` details.
+
+    ``validate_schedule_request_business_rules`` returns only stable codes so the
+    replan path and the contract tests can match on them. This richer form is for
+    API error responses: it names the offending device type and task for device
+    capability violations so the caller can show a readable reason.
+    """
+    codes = validate_schedule_request_business_rules(payload)
+    tasks = payload.get("tasks", [])
+    devices = payload.get("device_config", {}).get("devices", [])
+    available = [device for device in devices if device.get("available", True)]
+    details: list[dict[str, Any]] = []
+    for code in codes:
+        details.append({"code": code, "message": _describe_code(code, tasks, devices, available), "path": None})
+    return details
+
+
+def _device_label(device_type: str) -> str:
+    return DEVICE_TYPE_LABELS.get(device_type, device_type)
+
+
+def _task_label(task: dict[str, Any]) -> str:
+    return task.get("action") or task.get("task_id") or "未知步骤"
+
+
+def _describe_code(
+    code: str,
+    tasks: list[dict[str, Any]],
+    devices: list[dict[str, Any]],
+    available: list[dict[str, Any]],
+) -> str:
+    """Return a human-readable message for one business-rule code.
+
+    Device capability codes are re-resolved against the request so the message can
+    include the specific device type and task step; all other codes are returned as
+    their stable identifier.
+    """
+    if code not in _DEVICE_CAPABILITY_CODES:
+        return code
+    for task in tasks:
+        requirement = task.get("device_requirement")
+        if requirement is None:
+            continue
+        device_type = requirement.get("device_type")
+        label = _device_label(device_type)
+        action = _task_label(task)
+        typed = [device for device in available if device.get("device_type") == device_type]
+        if not typed:
+            configured = [device for device in devices if device.get("device_type") == device_type]
+            reason = "厨房未配置该设备" if not configured else "该设备均不可用"
+            if code == "DEVICE_TYPE_UNAVAILABLE":
+                return f"步骤「{action}」需要「{label}」，但{reason}"
+            continue
+        mode = requirement.get("mode")
+        mode_candidates = [
+            device for device in typed
+            if mode is None or mode in device.get("capabilities", {}).get("modes", [])
+        ]
+        if not mode_candidates:
+            if code == "DEVICE_MODE_UNSUPPORTED":
+                return f"步骤「{action}」需要的「{label}」不支持模式「{mode}」"
+            continue
+        temperature = requirement.get("temperature_c")
+        temperature_candidates = [
+            device for device in mode_candidates
+            if temperature is None
+            or (
+                (device.get("capabilities", {}).get("temperature_min_c") is None
+                 or device["capabilities"]["temperature_min_c"] <= temperature)
+                and (device.get("capabilities", {}).get("temperature_max_c") is None
+                     or temperature <= device["capabilities"]["temperature_max_c"])
+            )
+        ]
+        if not temperature_candidates:
+            if code == "DEVICE_TEMPERATURE_UNSUPPORTED":
+                return f"步骤「{action}」需要的「{label}」不支持 {temperature}℃"
+            continue
+        if not any(
+            device.get("capacity_units", 0) >= requirement.get("capacity_units", 1)
+            for device in temperature_candidates
+        ):
+            if code == "DEVICE_CAPACITY_INSUFFICIENT":
+                return f"步骤「{action}」需要的「{label}」容量不足"
+    return code
+
+
 def run_business_rule_regressions(valid_request: dict[str, Any]) -> None:
     cases: list[tuple[str, dict[str, Any]]] = []
 

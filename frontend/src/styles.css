@@ -609,6 +609,16 @@ body { min-height: 100%; }
 .product-messages:empty { display: none; }
 .product-messages { min-height: 0; }
 .product-messages .product-alert, .product-messages .error-banner { margin: 0; padding: 9px 13px; }
+.product-messages .error-banner {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 70; width: min(640px, calc(100% - 32px));
+  box-shadow: 0 18px 45px rgba(128, 93, 71, .24);
+  animation: error-banner-in .22s ease;
+}
+@keyframes error-banner-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 .planner-grid, .setup-grid, .confirm-grid { min-height: 0; height: 100%; overflow: hidden; gap: 12px; grid-template-columns: minmax(0, 1fr) 300px; }
 .planner-main, .setup-main, .confirm-main, .selection-panel { min-height: 0; height: 100%; overflow: hidden; border-radius: 18px; box-shadow: var(--shadow-sm); }
 .planner-main, .setup-main, .confirm-main { padding: 18px; display: flex; flex-direction: column; }

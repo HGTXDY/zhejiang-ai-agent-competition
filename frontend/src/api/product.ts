@@ -236,5 +236,5 @@ export class ProductApi {
 }
 export const productApi = new ProductApi()
 export const productErrorMessage = (error: unknown) => error instanceof ProductApiError
-  ? `${error.code}：${error.message}${error.details.length ? '；' + error.details.map(detail => `${detail.path ?? ''} ${detail.message}`).join('；') : ''}`
+  ? `${error.code}：${error.message}${error.details.length ? '；' + error.details.map(detail => detail.path ? `${detail.path} ${detail.message}` : detail.message).join('；') : ''}`
   : error instanceof Error ? error.message : '请求失败，请检查后端连接后重试'
