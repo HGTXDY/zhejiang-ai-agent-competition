@@ -29,6 +29,7 @@ from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
 from app.parser.deterministic import DeterministicParserAdapter
 from app.parser.llm import LLMParserAdapter
 from app.preparation_phases import classify_preparation_phases
+from app.staged_planning import StagedSolveError, build_staged_plan, partition_staged_request
 from app.model_config import ModelConfigService
 from app.replan import ReplanError, apply_event_to_request, replan
 from app.scheduler import schedule
@@ -311,6 +312,47 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
     @app.post("/devices/validate")
     def validate_devices(payload: dict[str, Any]) -> dict[str, Any]:
         return validate_device_config(payload)
+
+    @app.post("/schedules/staged")
+    def create_staged_schedule(payload: dict[str, Any]) -> Any:
+        """Opt-in planning: advance cold work + main cooking, confirmation gated.
+
+        Input: {"schedule_request": <V1 request>, "confirmed_advance_task_ids": []}.
+        Neither the standard /schedules nor the official /v1/schedules changes.
+        Preview plans are not stored and cannot receive execution events.
+        """
+        request = payload.get("schedule_request")
+        if not isinstance(request, dict):
+            return _error_response("unknown", "INVALID_INPUT", "schedule_request must be a V1 object", [])
+        request_id = str(request.get("request_id") or "unknown")
+        schema_details = _schema_details(request)
+        if schema_details:
+            return _error_response(request_id, "INVALID_INPUT", "Invalid V1 schedule request", schema_details)
+        errors = validate_schedule_request_business_rules(request)
+        if errors:
+            return _error_response(request_id, "VALIDATION_FAILED", "Invalid schedule request",
+                                   [{"code": code, "message": code, "path": None} for code in errors])
+        confirmed = payload.get("confirmed_advance_task_ids", [])
+        if (not isinstance(confirmed, list)
+                or any(not isinstance(task_id, str) for task_id in confirmed)):
+            return _error_response(request_id, "INVALID_INPUT", "confirmed_advance_task_ids must be a string list", [])
+        # No extra scheduler contract fields or silent completion assumptions.
+        partition = partition_staged_request(request)
+        if len(confirmed) != len(set(confirmed)) or set(confirmed) - set(partition.advance_task_ids):
+            return _error_response(request_id, "INVALID_INPUT", "Invalid advance preparation confirmations", [])
+        try:
+            result, executable_request = build_staged_plan(request, confirmed, schedule)
+        except StagedSolveError as error:
+            solver_status = error.result["solver"]["status"]
+            code = "SOLVER_TIMEOUT" if solver_status == "UNKNOWN" else "SCHEDULE_INFEASIBLE"
+            return JSONResponse(status_code=504 if solver_status == "UNKNOWN" else 409, content={
+                "schema_version": "1.0", "request_id": request_id,
+                "error": {"code": code, "message": f"{error.stage} stage could not be scheduled", "details": []},
+            })
+        if executable_request is not None:
+            # Only an explicitly confirmed plan is executable and replayable.
+            registry.put(executable_request, result["main_schedule"])
+        return result
 
     @app.post("/v1/schedules")
     @app.post("/schedules")
