@@ -36,6 +36,45 @@ def test_short_refrigeration_remains_in_main_flow():
     assert result['main_task_ids'] == [task['task_id'] for task in tasks]
 
 
+def test_three_hour_explicit_refrigeration_is_advance():
+    tasks = parse_steps('r3h', ['将肉切块后，放入冰箱冷藏3小时。', '取出煎10分钟。'])
+    result = classify_preparation_phases(tasks)
+    assert result['advance_task_ids']
+    assert result['holds'][0]['duration_sec'] == 3 * 3600
+    assert result['main_task_ids']
+
+
+def test_two_hour_chilling_is_advance_when_far_longer_than_remaining_cooking():
+    tasks = parse_steps('r2h', ['将肉切块后，放入冰箱冷藏2小时。', '取出煎10分钟。'])
+    result = classify_preparation_phases(tasks)
+    assert result['advance_task_ids']
+    assert result['holds'][0]['duration_sec'] == 2 * 3600
+
+
+def test_two_hour_unchilled_marinade_needs_storage_review():
+    tasks = parse_steps('r2hunknown', ['将肉腌制2小时。', '放入锅内炒10分钟。'])
+    result = classify_preparation_phases(tasks)
+    assert not result['advance_task_ids']
+    assert result['review_required']
+
+
+def test_vague_long_marinating_needs_confirmed_time_not_fake_three_hours():
+    tasks = parse_steps('rvague', ['将肉加入调味料长时间腌制。', '放入锅内炒10分钟。'])
+    assert tasks[0]['field_status']['duration_sec'] == 'defaulted'
+    result = classify_preparation_phases(tasks)
+    assert not result['advance_task_ids']
+    assert result['review_required']
+    assert '确认' in result['review_required'][0]['reason']
+    assert result['main_task_ids'] == [task['task_id'] for task in tasks]
+
+
+def test_short_marinating_without_advance_phrase_does_not_require_review():
+    tasks = parse_steps('rshort', ['将肉腌制10分钟。', '放入锅内炒10分钟。'])
+    result = classify_preparation_phases(tasks)
+    assert not result['advance_task_ids']
+    assert not result['review_required']
+
+
 def test_long_stove_cooking_not_called_advance():
     tasks = parse_steps('r2', ['把排骨放入锅中炖煮5小时。', '切葱花装盘。'])
     result = classify_preparation_phases(tasks)
