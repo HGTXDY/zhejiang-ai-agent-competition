@@ -36,16 +36,23 @@ describe('ExecutionDashboard', () => {
     expect(restore).toBeDisabled()
   })
 
-  it('drives a task from PENDING through RUNNING to COMPLETED', async () => {
+  it('walks a task from PENDING through RUNNING, revealing one step, then 结束任务 advances', async () => {
     render(<ExecutionDashboard />)
     selectFishSteam()
     expect(screen.getByRole('button', { name: '开始执行' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '开始执行' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '完成任务' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /下一步/ })).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: '完成任务' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '完成任务' })).not.toBeInTheDocument())
+    // The mock completion produces one reminder, so a single 下一步 drains the
+    // reveal and surfaces 结束任务.
+    fireEvent.click(screen.getByRole('button', { name: /下一步/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /结束任务/ })).toBeInTheDocument())
+
+    // Finalising locks the step and advances selection to the next actionable task.
+    fireEvent.click(screen.getByRole('button', { name: /结束任务/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始执行' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /结束任务/ })).not.toBeInTheDocument()
   })
 
   it('surfaces a distinct message for a 409 no-feasible-schedule failure', async () => {
@@ -98,5 +105,21 @@ describe('ExecutionDashboard', () => {
     expect(select).toBeInTheDocument()
     fireEvent.change(select, { target: { value: 'timeout' } })
     expect(select).toHaveValue('timeout')
+  })
+
+  it('opens the execution chat from the icon button and adds a device from a command', async () => {
+    render(<ExecutionDashboard />)
+    fireEvent.click(screen.getByRole('button', { name: '现场改动' }))
+    expect(screen.getByRole('dialog', { name: '现场改动' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('输入执行指令'), { target: { value: '现在多一个灶台' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('已新增设备：灶具').length).toBeGreaterThan(0))
+  })
+
+  it('opens the gantt chart in a modal from the icon button', () => {
+    render(<ExecutionDashboard />)
+    fireEvent.click(screen.getByRole('button', { name: '甘特图' }))
+    expect(screen.getByRole('dialog', { name: '甘特图' })).toBeInTheDocument()
+    expect(screen.getByText('按菜品看步骤，按资源查冲突')).toBeInTheDocument()
   })
 })

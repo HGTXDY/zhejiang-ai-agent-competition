@@ -9,7 +9,7 @@
     "schema_version": {"const": "1.0"},
     "event_id": {"type": "string", "minLength": 1},
     "schedule_id": {"type": "string", "minLength": 1},
-    "event_type": {"enum": ["TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE"]},
+    "event_type": {"enum": ["TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE", "DEVICE_ADDED"]},
     "occurred_at": {"type": "string", "format": "date-time"},
     "payload": {"type": "object"}
   },
@@ -29,6 +29,10 @@
     {
       "if": {"properties": {"event_type": {"const": "DISH_ADDED"}}},
       "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["tasks"], "properties": {"tasks": {"type": "array", "minItems": 1, "items": {"$ref": "task.schema.json"}}}}}}
+    },
+    {
+      "if": {"properties": {"event_type": {"const": "DEVICE_ADDED"}}},
+      "then": {"properties": {"payload": {"type": "object", "additionalProperties": false, "required": ["devices"], "properties": {"devices": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["device_id", "device_type", "capacity_units", "capabilities"], "properties": {"device_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"}, "device_type": {"enum": ["range_hood", "stove", "steamer", "oven", "refrigerator", "dishwasher", "water_purifier"]}, "capacity_units": {"type": "integer", "minimum": 1}, "capabilities": {"type": "object", "additionalProperties": false, "properties": {"modes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "temperature_min_c": {"type": ["integer", "null"], "minimum": -50, "maximum": 500}, "temperature_max_c": {"type": ["integer", "null"], "minimum": -50, "maximum": 500}}}}}}}}}}
     }
   ]
 }

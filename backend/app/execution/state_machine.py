@@ -10,7 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
-ALLOWED_EVENTS = {"TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE"}
+ALLOWED_EVENTS = {"TASK_COMPLETED", "TASK_DELAYED", "DISH_ADDED", "DEVICE_UNAVAILABLE", "DEVICE_ADDED"}
 LOCKED_STATUSES = {"COMPLETED", "LOCKED"}
 # Explicit transition policy: execution events cannot skip the lifecycle start.
 # Device failures may mark active work as exceptional, but never rewrite locked
@@ -69,6 +69,8 @@ class ExecutionStateMachine:
             result = self._delay(event_id, payload["task_id"], payload["delay_sec"])
         elif event_type == "DEVICE_UNAVAILABLE":
             result = self._device_unavailable(event_id, payload["device_id"])
+        elif event_type == "DEVICE_ADDED":
+            result = self._device_added(event_id, payload["devices"])
         else:
             result = self._dish_added(event_id, payload["tasks"])
         self._events.add(event_id)
@@ -109,6 +111,16 @@ class ExecutionStateMachine:
             task["status"] = "EXCEPTION"
             affected.append(task["task_id"])
         return EventResult(event_id, True, tuple(affected))
+
+    def _device_added(self, event_id: str, devices: list[dict[str, Any]]) -> EventResult:
+        if not devices:
+            raise EventError("INVALID_EVENT_PAYLOAD", "DEVICE_ADDED requires at least one device")
+        device_ids = [device.get("device_id") for device in devices]
+        if any(not device_id for device_id in device_ids) or len(set(device_ids)) != len(device_ids):
+            raise EventError("DUPLICATE_DEVICE", "DEVICE_ADDED contains a missing or duplicate device_id")
+        # Adding a device does not mutate task state; the replan service re-solves
+        # with the enlarged device configuration.
+        return EventResult(event_id, True, ())
 
     def _dish_added(self, event_id: str, tasks: list[dict[str, Any]]) -> EventResult:
         if not tasks:

@@ -1,5 +1,5 @@
 import profiles from './device-profiles.json'
-import type { DashboardSchedule, ScheduleResponse, ValidationError } from '../types/contracts'
+import type { DashboardSchedule, DeviceType, ScheduleDevice, ScheduleResponse, ValidationError } from '../types/contracts'
 import type { AgentCommandResponse, AgentPlanDraft, AgentPlanResponse, KitchenConfig, RecipeSummary } from '../types/product'
 
 export interface Recipe {
@@ -34,6 +34,16 @@ export class ProductApiError extends Error {
 
 // Demo presets copied from the current Parser default_device_config, not from selected tasks.
 // device-profiles.test.ts checks every Parser mode and the canonical bounds/capacity.
+export function makeDevice(type: DeviceType, index: number): ScheduleDevice {
+  const profile = profiles[type]
+  return {
+    device_id: `${type}_${index}`,
+    device_type: type,
+    capacity_units: profile.capacity_units,
+    capabilities: { modes: [...profile.modes], temperature_min_c: profile.temperature_min_c, temperature_max_c: profile.temperature_max_c },
+    available: true,
+  }
+}
 export function buildDeviceConfig(kitchen: KitchenConfig, now = new Date()): DeviceConfig {
   if (!/^\d{2}:\d{2}$/.test(kitchen.target_time)) throw new Error('请填写有效的目标开饭时间')
   const [hour, minute] = kitchen.target_time.split(':').map(Number)
@@ -44,7 +54,7 @@ export function buildDeviceConfig(kitchen: KitchenConfig, now = new Date()): Dev
   const devices = (Object.keys(profiles) as (keyof typeof profiles)[]).flatMap(type => {
     const count = kitchen[`${type}_count`] ?? 0
     if (!Number.isInteger(count) || count < 0 || count > (type === 'stove' ? 8 : 4)) throw new Error('设备数量超出范围或不是整数')
-    return Array.from({ length: count }, (_, i) => ({ device_id: `${type}_${i + 1}`, device_type: type, capacity_units: profiles[type].capacity_units, capabilities: { modes: [...profiles[type].modes], temperature_min_c: profiles[type].temperature_min_c, temperature_max_c: profiles[type].temperature_max_c }, available: true }))
+    return Array.from({ length: count }, (_, i) => makeDevice(type, i + 1))
   })
   return { schema_version: '1.0', operator_count: kitchen.operator_count, target_ready_at: target.toISOString(), devices }
 }

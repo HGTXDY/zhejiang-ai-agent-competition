@@ -22,8 +22,13 @@ describe('classifyError', () => {
     expect(classifyError(new ApiError('服务器内部错误', 500), 'fallback')).toBe('服务器内部错误（500）')
   })
 
-  it('falls back for unrecognised errors', () => {
-    expect(classifyError(new Error('boom'), 'fallback')).toBe('fallback')
+  it('surfaces the message of a plain Error instead of discarding it', () => {
+    expect(classifyError(new Error('缺少初始排程请求，请重新生成排程'), 'fallback')).toBe('缺少初始排程请求，请重新生成排程')
+  })
+
+  it('falls back for non-Error throws', () => {
+    expect(classifyError('boom', 'fallback')).toBe('fallback')
+    expect(classifyError(undefined, 'fallback')).toBe('fallback')
   })
 })
 

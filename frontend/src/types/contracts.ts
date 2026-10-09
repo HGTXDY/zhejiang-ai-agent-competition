@@ -51,8 +51,14 @@ export interface Notification {
 }
 export interface TimelineResource { id: string; label: string; tone: 'gold' | 'cyan' | 'violet' | 'slate' }
 export interface ScheduleDiff { task_id: string; action: string; type: DiffType; detail: string }
-
-export type ReplanEventType = 'TASK_COMPLETED' | 'TASK_DELAYED' | 'DISH_ADDED' | 'DEVICE_UNAVAILABLE'
+export type DeviceType = 'range_hood' | 'stove' | 'steamer' | 'oven' | 'refrigerator' | 'dishwasher' | 'water_purifier'
+export interface ScheduleDevice {
+  device_id: string
+  device_type: DeviceType
+  capacity_units: number
+  capabilities: { modes: string[]; temperature_min_c: number | null; temperature_max_c: number | null }
+  available: boolean
+}export type ReplanEventType = 'TASK_COMPLETED' | 'TASK_DELAYED' | 'DISH_ADDED' | 'DEVICE_UNAVAILABLE' | 'DEVICE_ADDED'
 export interface ScheduleRequest { [key: string]: unknown }
 export interface ReplanEvent {
   schema_version: '1.0'
