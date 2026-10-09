@@ -10,7 +10,10 @@ interface Props {
   resourceFilter: string
   targetTime?: string
   onSelect: (task: DashboardTask) => void
+  onResourceFilterChange?: (value: string) => void
 }
+
+type ViewMode = 'linear' | 'log'
 
 interface DishLane { id: string; label: string; tasks: DashboardTask[]; subrows: DashboardTask[][] }
 type TaskKind = 'manual' | 'automatic' | 'waiting' | 'idle'
@@ -64,8 +67,8 @@ const compactAction = (action: string, kind: TaskKind) => {
   return action.replace(processWords, '').trim().slice(0, 10) || '执行步骤'
 }
 
-function TaskBlock({ task, dishName, tone, selected, windowSize, planEnd, targetTime, onSelect, risk }: {
-  task: DashboardTask; dishName: string; tone: TimelineResource['tone']; selected: boolean; windowSize: number; planEnd: number; targetTime?: string; onSelect: () => void; risk: boolean
+function TaskBlock({ task, dishName, tone, selected, viewMode, windowSize, planEnd, targetTime, onSelect, risk, hovered, onHover }: {
+  task: DashboardTask; dishName: string; tone: TimelineResource['tone']; selected: boolean; viewMode: ViewMode; windowSize: number; planEnd: number; targetTime?: string; onSelect: () => void; risk: boolean; hovered: boolean; onHover: (id: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
   const { refs, floatingStyles, context } = useFloating({ open, onOpenChange: setOpen, placement: 'top', whileElementsMounted: autoUpdate, middleware: [offset(10), flip({ padding: 12 }), shift({ padding: 12 })] })
@@ -74,23 +77,32 @@ function TaskBlock({ task, dishName, tone, selected, windowSize, planEnd, target
   const dismiss = useDismiss(context)
   const role = useRole(context, { role: 'tooltip' })
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, focus, dismiss, role])
+  const referenceProps = getReferenceProps({
+    onMouseEnter: () => onHover(task.task_id),
+    onMouseLeave: () => onHover(null),
+  })
   const start = clockAt(task.start_offset_sec, targetTime, planEnd)
   const end = clockAt(task.end_offset_sec, targetTime, planEnd)
   const resources = formatResources(task.assigned_resources)
   const kind = taskKind(task)
   const aria = `${dishName}，${task.action}，${statusLabel[task.status]}，${start}至${end}，使用${resources}`
+  const durationSec = task.end_offset_sec - task.start_offset_sec
+  const left = task.start_offset_sec / windowSize * 100
+  const width = Math.max(durationSec / windowSize * 100, 1.15)
   return <>
     <button
       ref={refs.setReference}
       type="button"
       aria-label={aria}
       title={`${task.action} · ${statusLabel[task.status]} · ${start}–${end}`}
-      className={`task-bar ${tone} kind-${kind} ${task.status.toLowerCase()} ${task.locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${risk ? 'buffer-risk' : ''}`}
-      style={{ left: `${task.start_offset_sec / windowSize * 100}%`, width: `${Math.max((task.end_offset_sec - task.start_offset_sec) / windowSize * 100, 1.15)}%` }}
+      className={`task-bar ${tone} kind-${kind} ${task.status.toLowerCase()} ${task.locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${risk ? 'buffer-risk' : ''} ${hovered ? 'linked' : ''} ${viewMode === 'log' ? 'browse' : ''}`}
+      style={viewMode === 'log' ? undefined : { left: `${left}%`, width: `${width}%` }}
       onClick={onSelect}
-      {...getReferenceProps()}
+      {...referenceProps}
     >
-      <b>{compactAction(task.action, kind)}</b><small>{statusLabel[task.status]} · {formatDuration(task.end_offset_sec - task.start_offset_sec)}</small>{risk && <i className="buffer-warning" aria-label="缓冲不足">!</i>}
+      {viewMode === 'log'
+        ? <><small>{start}–{end}</small><b>{task.action}</b>{risk && <i className="buffer-warning" aria-label="缓冲不足">!</i>}</>
+        : <><b>{compactAction(task.action, kind)}</b><small>{statusLabel[task.status]} · {formatDuration(durationSec)}</small>{risk && <i className="buffer-warning" aria-label="缓冲不足">!</i>}</>}
     </button>
     {open && <FloatingPortal><div ref={refs.setFloating} style={floatingStyles} className="timeline-tooltip" {...getFloatingProps()}>
       <div className="tooltip-heading"><span>{dishName}</span><em className={`${task.status.toLowerCase()} kind-${kind}`}>{statusLabel[task.status]}</em></div>
@@ -102,19 +114,24 @@ function TaskBlock({ task, dishName, tone, selected, windowSize, planEnd, target
   </>
 }
 
-function ResourceBlock({ task, dishName, windowSize, resource, targetTime, planEnd, onSelect }: { task: DashboardTask; dishName: string; windowSize: number; resource: TimelineResource; targetTime?: string; planEnd: number; onSelect: () => void }) {
+function ResourceBlock({ task, dishName, windowSize, resource, targetTime, planEnd, onSelect, hovered, onHover }: { task: DashboardTask; dishName: string; windowSize: number; resource: TimelineResource; targetTime?: string; planEnd: number; onSelect: () => void; hovered: boolean; onHover: (id: string | null) => void }) {
   const start = clockAt(task.start_offset_sec, targetTime, planEnd)
   const end = clockAt(task.end_offset_sec, targetTime, planEnd)
-  return <button type="button" className={`resource-task ${resource.tone} ${task.status.toLowerCase()}`} title={`${task.action} · ${start}–${end}`} onClick={onSelect} style={{ left: `${task.start_offset_sec / windowSize * 100}%`, width: `${Math.max((task.end_offset_sec - task.start_offset_sec) / windowSize * 100, 1.15)}%` }}><span>{dishName}</span></button>
+  return <button type="button" className={`resource-task ${resource.tone} ${task.status.toLowerCase()} ${hovered ? 'linked' : ''}`} title={`${task.action} · ${start}–${end}`} onClick={onSelect} onMouseEnter={() => onHover(task.task_id)} onMouseLeave={() => onHover(null)} style={{ left: `${task.start_offset_sec / windowSize * 100}%`, width: `${Math.max((task.end_offset_sec - task.start_offset_sec) / windowSize * 100, 1.15)}%` }}><span>{dishName}</span></button>
 }
 
-export function Timeline({ tasks, resources, selectedId, resourceFilter, targetTime, onSelect }: Props) {
+export function Timeline({ tasks, resources, selectedId, resourceFilter, targetTime, onSelect, onResourceFilterChange }: Props) {
   const [collapsedDishes, setCollapsedDishes] = useState<Set<string>>(new Set())
+  const [viewMode, setViewMode] = useState<ViewMode>('log')
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null)
   const filteredTasks = useMemo(() => resourceFilter === 'all' ? tasks : tasks.filter(task => task.assigned_resources.includes(resourceFilter)), [resourceFilter, tasks])
   const planEnd = useMemo(() => Math.max(0, ...tasks.map(task => task.end_offset_sec)), [tasks])
+  const planStart = useMemo(() => tasks.length ? Math.min(...tasks.map(task => task.start_offset_sec)) : 0, [tasks])
   const windowSize = Math.max(MIN_WINDOW, Math.ceil(planEnd / WINDOW_UNIT) * WINDOW_UNIT)
   const tickStep = TICK_STEPS.find(step => windowSize / step <= MAX_TICKS) ?? TICK_STEPS[TICK_STEPS.length - 1]
   const ticks = Array.from({ length: Math.floor(windowSize / tickStep) + 1 }, (_, index) => index * tickStep)
+  const dishTicks = ticks
+  const dishX = (offset: number) => offset / windowSize * 100
   const resourceTone = useMemo(() => new Map(resources.map(resource => [resource.id, resource.tone])), [resources])
   const lanes = useMemo<DishLane[]>(() => {
     const groups = new Map<string, DashboardTask[]>()
@@ -134,18 +151,39 @@ export function Timeline({ tasks, resources, selectedId, resourceFilter, targetT
   const prepEnd = Math.max(0, ...tasks.filter(task => preparationWords.test(task.action)).map(task => task.end_offset_sec))
   const milestoneOffsets = [{ offset: prepEnd, label: '备料完成' }, { offset: planEnd, label: '预计出餐' }].filter((milestone, index, all) => milestone.offset > 0 && all.findIndex(item => item.offset === milestone.offset) === index)
 
-  return <section className="timeline-card">
-    <div className="timeline-title"><div><p className="eyebrow">多菜并行甘特图</p><h2>按菜品看步骤，按资源查冲突</h2><p className="timeline-caption">任务条显示状态和时长；悬停查看完整工序，点击打开步骤详情。</p></div><div className="timeline-status"><span className="live-pill"><i />计划进行中</span></div></div>
-    <div className="timeline-legend"><span><i className="legend-dot pending" />待执行</span><span><i className="legend-dot scheduled" />已排期</span><span><i className="legend-dot running" />执行中</span><span><i className="legend-dot delayed" />已延迟</span><span><i className="legend-dot completed" />已完成</span><span><i className="legend-dot exception" />异常</span><span><i className="legend-dot waiting" />等待 / 静置</span><span><i className="legend-dot buffer" />缓冲不足</span></div>
+  return <section className={`timeline-card view-${viewMode}`}>
+    <div className="timeline-legend"><div className="legend-items"><span><i className="legend-dot pending" />待执行</span><span><i className="legend-dot scheduled" />已排期</span><span><i className="legend-dot running" />执行中</span><span><i className="legend-dot delayed" />已延迟</span><span><i className="legend-dot completed" />已完成</span><span><i className="legend-dot exception" />异常</span><span><i className="legend-dot waiting" />等待 / 静置</span><span><i className="legend-dot buffer" />缓冲不足</span></div><div className="legend-actions"><div className="view-toggle" role="group" aria-label="视图模式"><button type="button" className={viewMode === 'linear' ? 'active' : ''} aria-pressed={viewMode === 'linear'} onClick={() => setViewMode('linear')}>真实时间</button><button type="button" className={viewMode === 'log' ? 'active' : ''} aria-pressed={viewMode === 'log'} onClick={() => setViewMode('log')}>工序浏览</button></div><div className="timeline-filter"><span>查看</span><select aria-label="按设备查看" value={resourceFilter} onChange={event => onResourceFilterChange?.(event.target.value)}><option value="all">全部设备</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label.split(' · ')[0]}</option>)}</select></div></div></div>
     {!lanes.length ? <div className="timeline-empty"><strong>暂无可展示的排程</strong><span>当前筛选条件下没有任务，请切换设备或返回排程配置。</span></div> : <div className="timeline-scroll">
-      <div className="timeline-grid-header"><div className="dish-lane-label header-label">菜品线程</div><div className="axis" aria-label="时间刻度">{ticks.map(tick => <span key={tick} style={{ left: `${tick / windowSize * 100}%` }}>{clockAt(tick, targetTime, planEnd)}</span>)}{milestoneOffsets.map(milestone => <i className="milestone-line" key={milestone.label} style={{ left: `${milestone.offset / windowSize * 100}%` }}><b>{milestone.label}</b></i>)}{nowOffset > 0 && <i className="now-line" style={{ left: `${nowOffset / windowSize * 100}%` }}><b>当前</b></i>}</div></div>
-      {lanes.map(lane => { const collapsed = collapsedDishes.has(lane.id); return <div className={`timeline-row dish-lane ${collapsed ? 'collapsed' : ''}`} key={lane.id} style={{ '--lane-height': `${collapsed ? 58 : 64 + (lane.subrows.length - 1) * 50}px` } as CSSProperties}>
+      <div className="timeline-grid-header"><div className="dish-lane-label header-label">菜品线程</div>{viewMode === 'linear' ? <div className="axis" aria-label="时间刻度">{dishTicks.map(tick => <span key={tick} style={{ left: `${dishX(tick)}%` }}>{clockAt(tick, targetTime, planEnd)}</span>)}{milestoneOffsets.map(milestone => <i className="milestone-line" key={milestone.label} style={{ left: `${dishX(milestone.offset)}%` }}><b>{milestone.label}</b></i>)}{nowOffset > 0 && <i className="now-line" style={{ left: `${dishX(nowOffset)}%` }}><b>当前</b></i>}</div> : <div className="axis browse-hint"><span>{clockAt(planStart, targetTime, planEnd)} 开始</span><i className="hint-line" aria-hidden="true" /><span>出餐 {clockAt(planEnd, targetTime, planEnd)}</span></div>}</div>
+      {lanes.map(lane => {
+        const collapsed = collapsedDishes.has(lane.id)
+        const laneHeight = collapsed ? 58 : viewMode === 'log' ? 72 : 64 + (lane.subrows.length - 1) * 50
+        const toneFor = (task: DashboardTask) => resourceTone.get(task.assigned_resources.find(id => !id.startsWith('operator_')) ?? task.assigned_resources[0]) ?? 'gold'
+        const ordered = [...lane.tasks].sort((a, b) => a.start_offset_sec - b.start_offset_sec || a.end_offset_sec - b.end_offset_sec)
+        return <div className={`timeline-row dish-lane ${collapsed ? 'collapsed' : ''}`} key={lane.id} style={{ '--lane-height': `${laneHeight}px` } as CSSProperties}>
         <button type="button" className="dish-lane-label" aria-expanded={!collapsed} onClick={() => setCollapsedDishes(current => { const next = new Set(current); if (next.has(lane.id)) next.delete(lane.id); else next.add(lane.id); return next })}><span className="dish-thread-dot" /><b><span className="collapse-icon">{collapsed ? '＋' : '−'}</span>{lane.label}</b><small>{lane.tasks.length} 个步骤 · {collapsed ? '点击展开' : '点击收起'}</small></button>
-        <div className="track">{ticks.slice(1).map(tick => <i className="grid-line" key={tick} style={{ left: `${tick / windowSize * 100}%` }} />)}{milestoneOffsets.map(milestone => <i className="milestone-line" key={milestone.label} style={{ left: `${milestone.offset / windowSize * 100}%` }} />)}{nowOffset > 0 && <i className="now-line" style={{ left: `${nowOffset / windowSize * 100}%` }} />}
-          {!collapsed && lane.subrows.flatMap((row, rowIndex) => row.map(task => <div className="task-slot" key={task.task_id} style={{ top: `${10 + rowIndex * 50}px` }}><TaskBlock task={task} dishName={lane.label} tone={resourceTone.get(task.assigned_resources.find(id => !id.startsWith('operator_')) ?? task.assigned_resources[0]) ?? 'gold'} selected={selectedId === task.task_id} windowSize={windowSize} planEnd={planEnd} targetTime={targetTime} risk={riskyTaskIds.has(task.task_id)} onSelect={() => onSelect(task)} /></div>))}
+        <div className={`track ${viewMode === 'log' ? 'browse' : ''}`}>
+          {viewMode === 'linear' ? (
+            <>
+              {dishTicks.slice(1).map(tick => <i className="grid-line" key={tick} style={{ left: `${dishX(tick)}%` }} />)}
+              {milestoneOffsets.map(milestone => <i className="milestone-line" key={milestone.label} style={{ left: `${dishX(milestone.offset)}%` }} />)}
+              {nowOffset > 0 && <i className="now-line" style={{ left: `${dishX(nowOffset)}%` }} />}
+              {!collapsed && lane.subrows.flatMap((row, rowIndex) => row.map(task => (
+                <div className="task-slot" key={task.task_id} style={{ top: `${10 + rowIndex * 50}px` }}>
+                  <TaskBlock task={task} dishName={lane.label} tone={toneFor(task)} selected={selectedId === task.task_id} viewMode={viewMode} windowSize={windowSize} planEnd={planEnd} targetTime={targetTime} risk={riskyTaskIds.has(task.task_id)} hovered={hoveredTaskId === task.task_id} onHover={setHoveredTaskId} onSelect={() => onSelect(task)} />
+                </div>
+              )))}
+            </>
+          ) : (
+            <>
+              {!collapsed && ordered.map(task => (
+                <TaskBlock key={task.task_id} task={task} dishName={lane.label} tone={toneFor(task)} selected={selectedId === task.task_id} viewMode={viewMode} windowSize={windowSize} planEnd={planEnd} targetTime={targetTime} risk={riskyTaskIds.has(task.task_id)} hovered={hoveredTaskId === task.task_id} onHover={setHoveredTaskId} onSelect={() => onSelect(task)} />
+              ))}
+            </>
+          )}
         </div>
       </div>})}
-      {resourceRows.length > 0 && <><div className="resource-section-title"><strong>资源占用</strong><span>检查同一时刻的蒸箱、烤箱、灶具和人手是否冲突</span></div><div className="resource-grid"><div className="resource-label header-label">设备 / 人力</div><div className="resource-axis">{ticks.map(tick => <i className="grid-line" key={tick} style={{ left: `${tick / windowSize * 100}%` }} />)}</div>{resourceRows.map(({ resource, tasks: rowTasks }) => <div className="resource-row" key={resource.id}><div className="resource-label"><span className={`resource-dot ${resource.tone}`} /><b>{resource.label}</b></div><div className="resource-track">{ticks.slice(1).map(tick => <i className="grid-line" key={tick} style={{ left: `${tick / windowSize * 100}%` }} />)}{rowTasks.map(task => <ResourceBlock key={`${resource.id}-${task.task_id}`} task={task} dishName={friendlyDishName(task.dish_id, rowTasks.filter(item => item.dish_id === task.dish_id), 0)} resource={resource} windowSize={windowSize} targetTime={targetTime} planEnd={planEnd} onSelect={() => onSelect(task)} />)}</div></div>)}</div></>}
+      {resourceRows.length > 0 && <><div className="resource-section-title"><strong>资源占用</strong><span>检查同一时刻的蒸箱、烤箱、灶具和人手是否冲突</span></div><div className="resource-grid"><div className="resource-label header-label">设备 / 人力</div><div className="resource-axis" aria-label="资源时间刻度">{ticks.map(tick => <span key={tick} style={{ left: `${tick / windowSize * 100}%` }}>{clockAt(tick, targetTime, planEnd)}</span>)}{ticks.map(tick => <i className="grid-line" key={tick} style={{ left: `${tick / windowSize * 100}%` }} />)}</div>{resourceRows.map(({ resource, tasks: rowTasks }) => <div className="resource-row" key={resource.id}><div className="resource-label"><span className={`resource-dot ${resource.tone}`} /><b>{resource.label}</b></div><div className="resource-track">{ticks.slice(1).map(tick => <i className="grid-line" key={tick} style={{ left: `${tick / windowSize * 100}%` }} />)}{rowTasks.map(task => <ResourceBlock key={`${resource.id}-${task.task_id}`} task={task} dishName={friendlyDishName(task.dish_id, rowTasks.filter(item => item.dish_id === task.dish_id), 0)} resource={resource} windowSize={windowSize} targetTime={targetTime} planEnd={planEnd} hovered={hoveredTaskId === task.task_id} onHover={setHoveredTaskId} onSelect={() => onSelect(task)} />)}</div></div>)}</div></>}
     </div>}
   </section>
 }

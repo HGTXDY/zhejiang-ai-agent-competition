@@ -29,15 +29,15 @@ describe('Timeline', () => {
 
   it('shows explicit clock labels derived from the target meal time', () => {
     renderTimeline()
-    expect(screen.getByText('12:15')).toBeInTheDocument()
-    expect(screen.getByText('12:30')).toBeInTheDocument()
+    expect(screen.getAllByText('12:15').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('12:30').length).toBeGreaterThan(0)
   })
 
   it('uses readable adaptive landmarks instead of labeling every minute on long plans', () => {
     const longTasks = [{ ...tasks[0], end_offset_sec: 4 * 60 * 60 }]
     const { container } = renderTimeline({ tasks: longTasks })
     expect(container.querySelectorAll('.axis > span').length).toBeLessThanOrEqual(5)
-    expect(screen.getByText('08:30')).toBeInTheDocument()
+    expect(screen.getAllByText('08:30').length).toBeGreaterThan(0)
   })
 
   it('renders an empty state when there are no tasks', () => {
@@ -70,5 +70,25 @@ describe('Timeline', () => {
     await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
     fireEvent.focus(block)
     expect(await screen.findByRole('tooltip')).toHaveTextContent('这一步需要你参与操作')
+  })
+
+  it('opens in browse view by default and switches to linear time', () => {
+    renderTimeline()
+    const linear = screen.getByRole('button', { name: '真实时间' })
+    const browse = screen.getByRole('button', { name: '工序浏览' })
+    expect(browse).toHaveAttribute('aria-pressed', 'true')
+    expect(linear).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(linear)
+    expect(browse).toHaveAttribute('aria-pressed', 'false')
+    expect(linear).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('lays out every step fully expanded with its own start/end time in browse view', () => {
+    renderTimeline()
+    const block = screen.getByRole('button', { name: /排骨焯水.*执行中/ })
+    expect(block).toHaveTextContent('排骨焯水')
+    expect(block).toHaveTextContent('12:20–12:30')
+    // 不按时间重叠分包：同一道菜的所有工序块都在同一个 track 内平铺一行。
+    expect(block.closest('.track')).toHaveClass('browse')
   })
 })

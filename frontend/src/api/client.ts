@@ -2,7 +2,7 @@ import { ApiError } from '../lib/errors'
 import { addDish as mockAddDish, getSchedule as mockGetSchedule, postEvent as mockPostEvent } from '../mock/api'
 import type { DashboardSchedule, DashboardTask, DeviceType, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
 import type { RecipeSummary } from '../types/product'
-import { makeDevice } from './product'
+import { makeDevice, resourceLabel, resourceTone } from './product'
 import type { ParseResult, Recipe } from './product'
 
 export interface CookFlowApi {
@@ -25,8 +25,8 @@ const apiSchedule = (response: ScheduleResponse): DashboardSchedule => {
     ...response,
     resources: resourceIds.map((id, index) => ({
       id,
-      label: RESOURCE_LABELS[id] ?? id,
-      tone: RESOURCE_TONES[index % RESOURCE_TONES.length],
+      label: resourceLabel(id),
+      tone: resourceTone(id, index),
     })),
     tasks: response.tasks.map(task => ({ ...task, action: (task as ScheduleTaskWithAction).action ?? task.task_id, dish_name: (task as ScheduleTaskWithAction).dish_name })),
   }
