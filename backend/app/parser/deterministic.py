@@ -147,6 +147,8 @@ _BEGIN_ACTIONS = re.compile(r"放入|倒入|加入|撒|淋|刷|抹|铺|摆|码|�
 _END_ACTIONS = re.compile(r"取出|捞出|盛出|装盘|装碗|翻面|关火")
 _MANUAL_ACTIONS = re.compile(r"切|剁|洗|拌|搅|翻|放|取|捞|盛|装|封|裹|刷|抹|搓|揉|擀|包|塞|倒|撒|淋|压|挑|削|剥|打|挤|混|抓|码|铺|摆|盖")
 _WAIT_KEYWORDS = re.compile(r"静置|醒发|发酵|松弛|饧|浸泡|泡发|泡软|晾")
+_CLAUSE_SPLIT = re.compile(r"[，。；、,;！？!?\s]+")
+_TIME_TEMP_SPEC = re.compile(r"\d+(?:\.\d+)?\s*(?:℃|°C|度|分钟|秒|小时|min)")
 
 _TEMPERATURE = re.compile(r"(\d+)\s*(?:℃|°C|°c|摄氏度|度)")
 _DURATION_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:个\s*)?(小时|分钟|秒|hr|h|min)", re.I)
@@ -283,26 +285,84 @@ def _is_wait(text: str) -> bool:
     return bool(_WAIT_KEYWORDS.search(text))
 
 
+def _begin_action(text: str) -> str:
+    """Name the concrete put-in operation (工序) instead of repeating the step.
+
+    A step often packs several operations into one sentence; a hand-off reminder
+    should say "放入蒸箱" rather than the whole step text. Return the first clause
+    that carries a begin keyword, trimmed at the take-out keyword or the device
+    time/temperature spec that follows it.
+    """
+    clauses = [clause.strip() for clause in _CLAUSE_SPLIT.split(text) if clause.strip()]
+    for clause in clauses:
+        begin = _BEGIN_ACTIONS.search(clause)
+        if begin is None:
+            continue
+        end = _END_ACTIONS.search(clause, begin.end())
+        cut = end.start() if end else len(clause)
+        spec = _TIME_TEMP_SPEC.search(clause, begin.end(), cut)
+        if spec is not None:
+            cut = spec.start()
+        start = 0
+        # A take-out keyword that leads the clause (取食材/关火待凉…) belongs to a
+        # prior phase; start the put-in phrase at the begin keyword instead so the
+        # reminder names the operation that actually comes next.
+        leading = _END_ACTIONS.search(clause)
+        if leading is not None and leading.start() < begin.start():
+            start = begin.start()
+        result = clause[start:cut].strip("，。；、,; ！？!?后")
+        if result:
+            return result[:60]
+    return text.strip()[:60]
+
+
+def _end_action(text: str) -> str:
+    """Name the concrete take-out operation, dropping its leading time phrase.
+
+    "普通蒸100度8分钟后取出装盘" should become "取出装盘": the reminder names the
+    operation the operator performs now, not the duration that preceded it.
+    """
+    clauses = [clause.strip() for clause in _CLAUSE_SPLIT.split(text) if clause.strip()]
+    for clause in reversed(clauses):
+        matches = list(_END_ACTIONS.finditer(clause))
+        if not matches:
+            continue
+        # Start at the first take-out keyword so a compound phrase such as
+        # "取出装盘" stays intact instead of collapsing to its last word.
+        start = matches[0].start()
+        # When a further put-in follows the take-out ("取出…撒上葱花"), the take-out
+        # phrase ends where the next operation begins, not at the clause end.
+        next_begin = _BEGIN_ACTIONS.search(clause, start + 1)
+        end = next_begin.start() if next_begin is not None else len(clause)
+        result = clause[start:end].strip("，。；、,; ！？!?后并")
+        if result:
+            return result[:60]
+    return text.strip()[:60]
+
+
 def _manual_segments(text: str, duration_sec: int) -> list[dict[str, Any]]:
     """Return schema-valid manual segments for a step that needs operator help.
 
     A begin action (putting food into a device) lands at the start and an end
     action (taking it out) at the finish. Short tasks collapse to one segment so
-    offsets never exceed the task duration.
+    offsets never exceed the task duration. Each segment names the concrete
+    operation (工序), never the whole step, so the reminder feed does not repeat
+    the same sentence for the put-in and take-out halves.
     """
     begin = bool(_BEGIN_ACTIONS.search(text))
     end = bool(_END_ACTIONS.search(text))
     if duration_sec <= 30:
         if begin or end:
-            return [{"offset_sec": 0, "duration_sec": duration_sec, "action": text[:60]}]
+            action = _begin_action(text) if begin else _end_action(text)
+            return [{"offset_sec": 0, "duration_sec": duration_sec, "action": action}]
         return []
     segments: list[dict[str, Any]] = []
     if begin:
-        segments.append({"offset_sec": 0, "duration_sec": 30, "action": text[:60]})
+        segments.append({"offset_sec": 0, "duration_sec": 30, "action": _begin_action(text)})
     if end:
-        segments.append({"offset_sec": max(30, duration_sec - 30), "duration_sec": 30, "action": text[:60]})
+        segments.append({"offset_sec": max(30, duration_sec - 30), "duration_sec": 30, "action": _end_action(text)})
     if not segments:
-        segments.append({"offset_sec": 0, "duration_sec": 30, "action": text[:60]})
+        segments.append({"offset_sec": 0, "duration_sec": 30, "action": text.strip()[:60]})
     return segments
 
 

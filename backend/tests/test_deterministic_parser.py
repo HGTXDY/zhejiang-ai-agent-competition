@@ -39,6 +39,25 @@ def test_parse_steamed_fish_step_maps_device_mode_temperature_and_duration():
     assert steam["field_status"]["duration_sec"] == "provided"
 
 
+def _manual_segment_actions(recipe_id: str, step: str) -> list[str]:
+    tasks = RecipeParser(DeterministicParserAdapter()).parse(_recipe(recipe_id, [step])).tasks
+    return [segment["action"] for task in tasks for segment in task.get("manual_segments", [])]
+
+
+def test_manual_segments_name_distinct_operations_instead_of_repeating_step():
+    # A compound step packs a put-in and a take-out into one sentence. Each hand-off
+    # segment must name its own 工序 ("放入蒸箱" / "取出装盘"), never the whole step.
+    actions = _manual_segment_actions("steamed", "放入蒸箱，普通蒸100度8分钟后取出装盘。")
+    assert actions == ["放入蒸箱", "取出装盘"]
+
+    # When the take-out leads the sentence (取食材 before the put-in), the two
+    # segments must still be distinct instead of both collapsing to the full step.
+    inverted = _manual_segment_actions("tofu", "取出豆干铺在小号碗中，加入30g红剁椒，上锅蒸8分钟")
+    assert len(inverted) == 2
+    assert inverted[0] != inverted[1]
+    assert "取出豆干铺在小号碗中" not in inverted
+
+
 def test_parse_is_deterministic_across_runs():
     recipe = _recipe(
         "baked_wings",
