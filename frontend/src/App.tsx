@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import ExecutionDashboard from './components/ExecutionDashboard'
 import ModelSettingsDialog from './components/ModelSettingsDialog'
+import ManualScheduleResult from './components/ManualScheduleResult'
 import PlanningModeChooser from './components/PlanningModeChooser'
 import AgentPlanner from './components/AgentPlanner'
 import { api } from './api/client'
@@ -210,7 +211,8 @@ export default function App() {
       {planningMode === 'manual' && step === 'recipes' && <RecipeStep recipes={visibleRecipes} selected={selected} selectedIds={selectedIds} query={query} loading={loading || catalogLoading} onQuery={setQuery} onToggle={toggleRecipe} onNext={() => void continueToKitchen()} />}
       {planningMode === 'manual' && step === 'kitchen' && <KitchenStep kitchen={kitchen} selected={selected} loading={loading} onChange={updateKitchen} onBack={() => setStep('recipes')} onNext={() => void continueToConfirm()} />}
       {planningMode !== 'choose' && step === 'confirm' && <ConfirmStep source={planSource} kitchen={kitchen} selected={selected} parsed={parsed} confirmed={confirmed} loading={loading} setConfirmed={setConfirmed} onBack={() => setStep(planSource === 'agent' ? 'recipes' : 'kitchen')} onSubmit={() => void createSchedule()} />}
-      {planningMode !== 'choose' && step === 'result' && schedule && !executionStarted && <section className="setup-grid"><div className="setup-main"><div className="compact-heading"><p className="eyebrow">排程成功</p><h2>排程已生成</h2><p className="setup-copy">做饭计划已经准备好。开始后将直接使用刚刚生成的这份排程。</p></div><div className="setup-actions"><button className="secondary" disabled={loading} onClick={reviseGeneratedPlan}>← 返回修改</button><button className="primary" disabled={loading} onClick={() => setExecutionStarted(true)}>开始做饭 →</button></div></div><aside className="selection-panel summary-panel"><p className="eyebrow">本次计划</p><h2>{selected.length} 道菜</h2><div className="summary-row"><span>目标开饭时间</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>排程编号</span><b>{schedule.schedule_id}</b></div></aside></section>}
+      {planningMode === 'manual' && manualFlow && step === 'result' && schedule && !executionStarted && <ManualScheduleResult schedule={schedule} selected={selected} targetTime={kitchen.target_time} loading={loading} onRevise={reviseGeneratedPlan} onStart={() => setExecutionStarted(true)} />}
+      {planningMode === 'agent' && step === 'result' && schedule && !executionStarted && <section className="setup-grid"><div className="setup-main"><div className="compact-heading"><p className="eyebrow">排程成功</p><h2>排程已生成</h2><p className="setup-copy">做饭计划已经准备好。开始后将直接使用刚刚生成的这份排程。</p></div><div className="setup-actions"><button className="secondary" disabled={loading} onClick={reviseGeneratedPlan}>← 返回修改</button><button className="primary" disabled={loading} onClick={() => setExecutionStarted(true)}>开始做饭 →</button></div></div><aside className="selection-panel summary-panel"><p className="eyebrow">本次计划</p><h2>{selected.length} 道菜</h2><div className="summary-row"><span>目标开饭时间</span><b>{kitchen.target_time}</b></div><div className="summary-row"><span>排程编号</span><b>{schedule.schedule_id}</b></div></aside></section>}
     </section>
     {modelSettingsOpen && <ModelSettingsDialog open settings={modelSettings} busy={modelBusy} onClose={() => setModelSettingsOpen(false)} onSave={updateModelSettings} onTest={testModelSettings} onReset={resetModelSettings} />}
   </main>
