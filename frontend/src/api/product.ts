@@ -1,5 +1,5 @@
 import profiles from './device-profiles.json'
-import type { DashboardSchedule, DeviceType, ScheduleDevice, ScheduleResponse, ValidationError } from '../types/contracts'
+import type { DashboardSchedule, DeviceType, ScheduleDevice, ScheduleResponse, TimelineResource, ValidationError } from '../types/contracts'
 import type { AgentCommandResponse, AgentPlanDraft, AgentPlanResponse, KitchenConfig, RecipeSummary } from '../types/product'
 
 export interface Recipe {
@@ -61,11 +61,29 @@ export function buildDeviceConfig(kitchen: KitchenConfig, now = new Date()): Dev
 export function assertSelection(ids: string[]) {
   if (ids.length < 3 || ids.length > 5 || new Set(ids).size !== ids.length) throw new Error('请选择 3～5 道不同的菜')
 }
+const RESOURCE_TYPE_LABELS: Record<string, string> = {
+  operator: '操作员', stove: '灶具', steamer: '蒸箱', oven: '烤箱',
+  refrigerator: '冰箱', dishwasher: '洗碗机', range_hood: '烟机', water_purifier: '净水机',
+}
+const RESOURCE_TYPE_TONES: Record<string, TimelineResource['tone']> = { operator: 'gold', stove: 'cyan', steamer: 'violet', oven: 'slate' }
+const TONE_FALLBACKS: TimelineResource['tone'][] = ['gold', 'cyan', 'violet', 'slate']
+
+const resourceType = (id: string) => { const match = id.match(/^(.*)_\d+$/); return match?.[1] ?? id }
+export function resourceLabel(id: string): string {
+  const type = resourceType(id)
+  const base = RESOURCE_TYPE_LABELS[type] ?? type
+  const num = Number(id.match(/_(\d+)$/)?.[1])
+  return Number.isFinite(num) ? `${base} · ${String(num).padStart(2, '0')}` : base
+}
+export function resourceTone(id: string, index: number): TimelineResource['tone'] {
+  const type = resourceType(id)
+  return RESOURCE_TYPE_TONES[type] ?? TONE_FALLBACKS[index % TONE_FALLBACKS.length]
+}
+
 export function toDashboard(response: ScheduleResponse, tasks: ParsedTask[]): DashboardSchedule {
   const actions = new Map(tasks.map(task => [task.task_id, task.action]))
-  const tones = ['gold', 'cyan', 'violet', 'slate'] as const
   return { ...response, tasks: response.tasks.map(task => ({ ...task, action: actions.get(task.task_id) ?? task.task_id })),
-    resources: [...new Set(response.tasks.flatMap(task => task.assigned_resources))].map((id, i) => ({ id, label: id, tone: tones[i % tones.length] })) }
+    resources: [...new Set(response.tasks.flatMap(task => task.assigned_resources))].map((id, i) => ({ id, label: resourceLabel(id), tone: resourceTone(id, i) })) }
 }
 export class ProductApi {
   constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}

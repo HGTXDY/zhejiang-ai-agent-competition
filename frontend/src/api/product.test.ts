@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ProductApi, ProductApiError, buildDeviceConfig } from './product'
+import { ProductApi, ProductApiError, buildDeviceConfig, resourceLabel, resourceTone } from './product'
 import type { ParseResult } from './product'
 import requestExample from '../../../contracts/v1/examples/schedule-request-v1.json'
 import responseExample from '../../../contracts/v1/examples/schedule-response-v1.json'
@@ -72,6 +72,28 @@ describe('product API', () => {
     const missing = structuredClone(parsed); missing[0].tasks[0].field_status = { duration_sec: 'missing' }
     await expect(api.createSchedule(ids, kitchen, missing)).rejects.toThrow('缺失字段')
     expect(fetcher).not.toHaveBeenCalled()
+  })
+})
+
+describe('resource labeling', () => {
+  it('maps resource ids to Chinese labels with zero-padded indexes', () => {
+    expect(resourceLabel('operator_1')).toBe('操作员 · 01')
+    expect(resourceLabel('stove_2')).toBe('灶具 · 02')
+    expect(resourceLabel('steamer_1')).toBe('蒸箱 · 01')
+    expect(resourceLabel('range_hood_3')).toBe('烟机 · 03')
+  })
+  it('keeps the raw type for unknown ids and omits the index when there is none', () => {
+    expect(resourceLabel('unknown_7')).toBe('unknown · 07')
+    expect(resourceLabel('oven')).toBe('烤箱')
+    expect(resourceLabel('operator')).toBe('操作员')
+  })
+  it('assigns a stable tone per resource type and a fallback tone for unknown types', () => {
+    expect(resourceTone('operator_1', 0)).toBe('gold')
+    expect(resourceTone('stove_1', 1)).toBe('cyan')
+    expect(resourceTone('steamer_1', 2)).toBe('violet')
+    expect(resourceTone('oven_1', 3)).toBe('slate')
+    expect(resourceTone('unknown_1', 0)).toBe('gold')
+    expect(resourceTone('unknown_1', 1)).toBe('cyan')
   })
 })
 

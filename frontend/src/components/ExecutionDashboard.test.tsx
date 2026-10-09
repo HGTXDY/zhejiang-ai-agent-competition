@@ -120,6 +120,7 @@ describe('ExecutionDashboard', () => {
     render(<ExecutionDashboard />)
     fireEvent.click(screen.getByRole('button', { name: '甘特图' }))
     expect(screen.getByRole('dialog', { name: '甘特图' })).toBeInTheDocument()
-    expect(screen.getByText('按菜品看步骤，按资源查冲突')).toBeInTheDocument()
+    expect(screen.getByLabelText('按设备查看')).toBeInTheDocument()
+    expect(screen.getByText('等待 / 静置')).toBeInTheDocument()
   })
 })

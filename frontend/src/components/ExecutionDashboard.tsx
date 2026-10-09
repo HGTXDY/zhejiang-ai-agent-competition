@@ -254,8 +254,7 @@ export default function ExecutionDashboard({ initialSchedule: providedSchedule, 
       {ganttOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setGanttOpen(false) }}>
         <section className="model-dialog gantt-dialog" role="dialog" aria-modal="true" aria-labelledby="gantt-title">
           <div className="dialog-heading"><div><p className="eyebrow">完整时间线</p><h2 id="gantt-title">甘特图</h2><p>完整展示菜品线程与设备占用，悬停查看工序详情。</p></div><button type="button" className="dialog-close" aria-label="关闭甘特图" onClick={() => setGanttOpen(false)}>×</button></div>
-          <div className="gantt-toolbar"><div className="filter-group"><span>查看</span><select aria-label="按设备查看" value={resourceFilter} onChange={event => setResourceFilter(event.target.value)}><option value="all">全部设备</option>{resources.map(resource => <option value={resource.id} key={resource.id}>{resource.label.split(' · ')[0]}</option>)}</select></div></div>
-          <Timeline tasks={tasks} resources={resources} selectedId={selectedId} resourceFilter={resourceFilter} targetTime={schedule.target_time} onSelect={task => setSelectedId(task.task_id)} />
+          <Timeline tasks={tasks} resources={resources} selectedId={selectedId} resourceFilter={resourceFilter} targetTime={schedule.target_time} onSelect={task => setSelectedId(task.task_id)} onResourceFilterChange={setResourceFilter} />
         </section>
       </div>}
     </div>
