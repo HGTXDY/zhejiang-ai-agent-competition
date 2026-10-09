@@ -256,3 +256,23 @@ def test_agent_command_understands_delay_and_device_failure():
     assert delayed["task_id"] == "t1"
     broken = client.post("/agent/command", json={"message": "蒸箱坏了", "tasks": tasks}).json()
     assert broken == {"intent": "device_unavailable", "reply": "已识别设备异常，将重新安排。", "device_id": "steamer_1", "ready": True}
+
+
+def test_agent_command_understands_adding_a_device():
+    client = TestClient(create_app())
+    added = client.post("/agent/command", json={"message": "现在多一个灶台", "tasks": []}).json()
+    assert added["intent"] == "add_device"
+    assert added["device_type"] == "stove"
+    assert added["count"] == 1
+    assert added["ready"] is True
+
+    two = client.post("/agent/command", json={"message": "再加两个烤箱", "tasks": []}).json()
+    assert two["intent"] == "add_device"
+    assert two["device_type"] == "oven"
+    assert two["count"] == 2
+    assert two["ready"] is True
+
+    vague = client.post("/agent/command", json={"message": "现在多一个", "tasks": []}).json()
+    assert vague["intent"] == "add_device"
+    assert vague["device_type"] is None
+    assert vague["ready"] is False

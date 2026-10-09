@@ -38,6 +38,11 @@ def build_key_node_plan(
         definition = by_id.get(task_id)
         if definition is None:
             continue
+        # Completed/cancelled tasks are historical: their key-node reminders have
+        # already fired, so re-emitting them on every replan floods the reminder
+        # feed with stale "现在可以开始" notices for steps that are already done.
+        if scheduled.get("status") in {"COMPLETED", "CANCELLED"}:
+            continue
         start = scheduled["start_offset_sec"]
         end = scheduled["end_offset_sec"]
         dish_id = scheduled["dish_id"]

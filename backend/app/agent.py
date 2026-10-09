@@ -25,6 +25,36 @@ _DEVICE_COUNT_FIELDS = (
     "range_hood_count",
     "water_purifier_count",
 )
+# Longest-first so "油烟机"/"净咖一体机"/"灶台" win over their substrings.
+_DEVICE_TYPE_WORDS = (
+    ("净咖一体机", "water_purifier"),
+    ("油烟机", "range_hood"),
+    ("洗碗机", "dishwasher"),
+    ("净水机", "water_purifier"),
+    ("蒸箱", "steamer"),
+    ("蒸锅", "steamer"),
+    ("烤箱", "oven"),
+    ("冰箱", "refrigerator"),
+    ("炉灶", "stove"),
+    ("灶台", "stove"),
+    ("烟机", "range_hood"),
+    ("灶", "stove"),
+)
+_DEVICE_TYPE_LABELS = {
+    "stove": "灶台",
+    "steamer": "蒸箱",
+    "oven": "烤箱",
+    "refrigerator": "冰箱",
+    "dishwasher": "洗碗机",
+    "range_hood": "烟机",
+    "water_purifier": "净水机",
+}
+_ADD_DEVICE_PATTERN = re.compile(
+    r"(?:多|加|再|新增|来)\s*([一二两三四五六七八九十\d]+)?\s*[个台]?\s*("
+    + "|".join(word for word, _ in _DEVICE_TYPE_WORDS)
+    + r")"
+)
+_ADD_DEVICE_TRIGGERS = ("多一个", "多一台", "多加", "再加", "加一个", "加一台", "加两个", "多两个", "新增", "再来", "多几个", "加几个")
 
 
 def _number(value: str) -> int | None:
@@ -228,6 +258,15 @@ def interpret_command(payload: dict[str, Any]) -> dict[str, Any]:
     if any(word in message for word in ("加一道", "加菜", "再做")):
         recipe = next((item for item in recipes if str(item.get("name", "")) in message), None)
         return {"intent": "add_dish", "reply": "已识别临时加菜。" if recipe else "你想临时加哪一道菜？", "recipe_id": recipe.get("recipe_id") if recipe else None, "ready": bool(recipe)}
+    if any(word in message for word in _ADD_DEVICE_TRIGGERS):
+        add_device = _ADD_DEVICE_PATTERN.search(message)
+        if add_device:
+            count_token = add_device.group(1)
+            count = _number(count_token) if count_token else 1
+            device_word = add_device.group(2)
+            device_type = next(value for word, value in _DEVICE_TYPE_WORDS if word == device_word)
+            return {"intent": "add_device", "reply": f"已识别新增{_DEVICE_TYPE_LABELS[device_type]} × {count}，将重新排程。", "device_type": device_type, "count": count, "ready": True}
+        return {"intent": "add_device", "reply": "请说明要新增哪种设备（如灶台、烤箱、蒸箱）。", "device_type": None, "count": 1, "ready": False}
     if any(word in message for word in ("坏了", "不可用", "故障")):
         device = next((value for key, value in (("蒸箱", "steamer_1"), ("烤箱", "oven_1"), ("灶", "stove_1")) if key in message), None)
         return {"intent": "device_unavailable", "reply": "已识别设备异常，将重新安排。" if device else "请说明是哪台设备不可用。", "device_id": device, "ready": bool(device)}

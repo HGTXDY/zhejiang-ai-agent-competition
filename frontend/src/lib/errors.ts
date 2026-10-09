@@ -22,5 +22,9 @@ export function classifyError(error: unknown, fallback: string): string {
     return `${error.message}（${error.status}）`
   }
   if (error instanceof TypeError) return '网络连接失败，请检查后端服务'
+  // Client-side guards throw plain Errors with actionable messages (e.g.
+  // "缺少初始排程请求，请重新生成排程"); surface those instead of collapsing
+  // them into the generic fallback.
+  if (error instanceof Error) return error.message
   return fallback
 }

@@ -113,3 +113,28 @@ def test_pure_device_task_gets_start_and_complete_notifications() -> None:
     assert {point["offset_sec"] for point in points["steam_only"]} == {120, 600}
     assert {notification["trigger_offset_sec"] for notification in notifications} == {120, 600}
     assert all(notification["device_id"] == "steamer_1" for notification in notifications)
+
+
+def test_completed_tasks_are_excluded_from_key_node_plan() -> None:
+    scheduled = [
+        {
+            "task_id": "done_task", "dish_id": "dish", "start_offset_sec": 0,
+            "end_offset_sec": 300, "assigned_resources": ["operator_1"],
+            "status": "COMPLETED", "locked": True, "notification_points": [],
+        },
+        {
+            "task_id": "todo_task", "dish_id": "dish", "start_offset_sec": 300,
+            "end_offset_sec": 600, "assigned_resources": ["operator_1"],
+            "status": "PENDING", "locked": False, "notification_points": [],
+        },
+    ]
+    definitions = [
+        {"task_id": "done_task", "dish_id": "dish", "action": "已经完成", "manual_required": True, "manual_segments": []},
+        {"task_id": "todo_task", "dish_id": "dish", "action": "还没做", "manual_required": True, "manual_segments": []},
+    ]
+    notifications, points = build_key_node_plan(scheduled, definitions)
+    # Completed tasks are historical: their reminders already fired and must not
+    # be re-emitted on every replan, or the reminder feed shows stale "现在可以开始"
+    # notices for steps that are already done.
+    assert {notification["task_id"] for notification in notifications} == {"todo_task"}
+    assert set(points) == {"todo_task"}

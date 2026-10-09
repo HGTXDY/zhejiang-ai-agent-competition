@@ -1,7 +1,8 @@
 import { ApiError } from '../lib/errors'
 import { addDish as mockAddDish, getSchedule as mockGetSchedule, postEvent as mockPostEvent } from '../mock/api'
-import type { DashboardSchedule, DashboardTask, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
+import type { DashboardSchedule, DashboardTask, DeviceType, DiffType, Notification, ReplanEvent, ReplanEventType, ReplanResponse, ReplanResult, ScheduleRequest, ScheduleResponse, TimelineResource } from '../types/contracts'
 import type { RecipeSummary } from '../types/product'
+import { makeDevice } from './product'
 import type { ParseResult, Recipe } from './product'
 
 export interface CookFlowApi {
@@ -9,6 +10,7 @@ export interface CookFlowApi {
   getSchedule(): Promise<DashboardSchedule>
   postEvent(task: DashboardTask, status: DashboardTask['status'], current: DashboardSchedule, options?: { delaySec?: number; deviceId?: string }): Promise<ReplanResult>
   addDish(current: DashboardSchedule, recipe: RecipeSummary): Promise<ReplanResult>
+  addDevice(current: DashboardSchedule, deviceType: DeviceType, count?: number): Promise<ReplanResult>
 }
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -30,12 +32,14 @@ const apiSchedule = (response: ScheduleResponse): DashboardSchedule => {
   }
 }
 interface ScheduleTaskWithAction { action?: string; dish_name?: string }
-const toDiffs = (response: ReplanResponse): ReplanResult['changes'] => response.changes.map(change => ({
-  task_id: change.task_id,
-  action: (response.schedule.tasks.find(task => task.task_id === change.task_id) as ScheduleTaskWithAction | undefined)?.action ?? change.task_id,
-  type: (change.change_type === 'CANCELLED' ? 'REMOVED' : change.change_type) as DiffType,
-  detail: change.change_type === 'MOVED' ? `时间调整至 ${formatOffset(change.new_start_offset_sec)}` : change.change_type === 'RESOURCE_CHANGED' ? `资源调整为 ${(change.new_resources ?? []).join('、') || '人工操作'}` : change.change_type === 'ADDED' ? '临时加入当前排程' : change.change_type === 'LOCKED' ? '已完成/执行中任务保持锁定' : '排程状态已更新',
-}))
+const toDiffs = (response: ReplanResponse): ReplanResult['changes'] => response.changes
+  .filter(change => change.change_type !== 'UNCHANGED')
+  .map(change => ({
+    task_id: change.task_id,
+    action: (response.schedule.tasks.find(task => task.task_id === change.task_id) as ScheduleTaskWithAction | undefined)?.action ?? change.task_id,
+    type: (change.change_type === 'CANCELLED' ? 'REMOVED' : change.change_type) as DiffType,
+    detail: change.change_type === 'MOVED' ? `时间调整至 ${formatOffset(change.new_start_offset_sec)}` : change.change_type === 'RESOURCE_CHANGED' ? `资源调整为 ${(change.new_resources ?? []).join('、') || '人工操作'}` : change.change_type === 'ADDED' ? '临时加入当前排程' : change.change_type === 'LOCKED' ? '已完成/执行中任务保持锁定' : '排程状态已更新',
+  }))
 const formatOffset = (offset: number | null | undefined) => offset == null ? '—' : `${Math.floor(offset / 60)}:${String(offset % 60).padStart(2, '0')}`
 const toResult = (response: ReplanResponse, request: ScheduleRequest, dishName?: string): ReplanResult => {
   const tasks = (request.tasks ?? []) as Array<{ task_id: string; dish_id: string; action: string }>
@@ -69,17 +73,41 @@ export const toReplanEnvelope = (event: ReplanEvent, scheduleRequest: ScheduleRe
   }
 }
 
+const SCHEDULE_REQUEST_KEY = 'cookflow.schedule-request.v1'
+
+/** The planner persists the accepted schedule (and `executionStarted`) so a page
+ * reload restores the execution view, but the `HttpCookFlowApi` singleton is
+ * rebuilt from scratch on reload. Replan requests (完成/延迟/设备异常/加菜/加设备)
+ * need the original `ScheduleRequest` for lineage and the CP-SAT re-solve, so we
+ * persist it alongside the session and restore it here. */
+function loadPersistedScheduleRequest(): ScheduleRequest | null {
+  try {
+    const raw = localStorage.getItem(SCHEDULE_REQUEST_KEY)
+    if (!raw) return null
+    const value = JSON.parse(raw) as Record<string, unknown>
+    return value && typeof value === 'object' ? (value as ScheduleRequest) : null
+  } catch {
+    return null
+  }
+}
+function persistScheduleRequest(request: ScheduleRequest): void {
+  try { localStorage.setItem(SCHEDULE_REQUEST_KEY, JSON.stringify(request)) } catch { /* storage unavailable or quota exceeded */ }
+}
+
 export class HttpCookFlowApi implements CookFlowApi {
   private scheduleRequest: ScheduleRequest | null = null
   private acceptedScheduleId: string | null = null
   private replanInFlight = false
   private contextGeneration = 0
   private eventSequence = 0
-  constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {}
+  constructor(private readonly baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000') {
+    this.scheduleRequest = loadPersistedScheduleRequest()
+  }
   setScheduleRequest(request: ScheduleRequest): void {
     this.scheduleRequest = structuredClone(request)
     this.acceptedScheduleId = null
     this.contextGeneration += 1
+    persistScheduleRequest(request)
   }
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
@@ -121,6 +149,13 @@ export class HttpCookFlowApi implements CookFlowApi {
         if (!device) throw new Error('故障设备不在排程请求中')
         device.available = false
       }
+      if (event.event_type === 'DEVICE_ADDED') {
+        const config = nextRequest.device_config as { devices: Array<{ device_id: string }> }
+        const existing = new Set(config.devices.map(device => device.device_id))
+        const added = event.payload.devices as Array<{ device_id: string }>
+        if (added.some(device => existing.has(device.device_id))) throw new Error('新增设备编号重复')
+        config.devices.push(...structuredClone(added))
+      }
       const expectedIds = new Set(((nextRequest.tasks ?? []) as Array<{ task_id: string }>).map(task => task.task_id))
       const actualIds = response.schedule.tasks.map(task => task.task_id)
       const returnedTasks = new Map(response.schedule.tasks.map(task => [task.task_id, task]))
@@ -158,7 +193,7 @@ export class HttpCookFlowApi implements CookFlowApi {
     if (status === 'RUNNING') {
       const notification: Notification = { notification_id: `evt-${Date.now()}`, level: 'info', type: 'schedule_updated', trigger_offset_sec: task.start_offset_sec, dish_id: task.dish_id, task_id: task.task_id, action: `${task.action} · 已开始执行`, parameters: { status }, message: '任务已进入执行中状态', created_at: new Date().toISOString() }
       const updatedTask = { ...task, status: 'RUNNING' as const }
-      return { schedule: { ...current, tasks: current.tasks.map(item => item.task_id === task.task_id ? updatedTask : item) }, changes: [{ task_id: task.task_id, action: task.action, type: 'UNCHANGED', detail: '任务开始执行' }], notifications: [notification], disruptionScore: 0 }
+      return { schedule: { ...current, tasks: current.tasks.map(item => item.task_id === task.task_id ? updatedTask : item) }, changes: [], notifications: [notification], disruptionScore: 0 }
     }
     const eventType: ReplanEventType = status === 'COMPLETED' ? 'TASK_COMPLETED' : status === 'DELAYED' ? 'TASK_DELAYED' : 'DEVICE_UNAVAILABLE'
     const payload = eventType === 'TASK_DELAYED' ? { task_id: task.task_id, delay_sec: options?.delaySec ?? 60 } : eventType === 'DEVICE_UNAVAILABLE' ? { device_id: options?.deviceId ?? task.assigned_resources.find(resource => !resource.startsWith('operator_')) ?? task.assigned_resources[0] } : { task_id: task.task_id }
@@ -176,6 +211,17 @@ export class HttpCookFlowApi implements CookFlowApi {
     if (!tasks.length) throw new Error('这道菜暂时无法解析出可执行步骤，请换一道菜')
     return this.replan({ schema_version: '1.0', event_id: `evt_${stamp}`, schedule_id: current.schedule_id, event_type: 'DISH_ADDED', occurred_at: new Date().toISOString(), payload: { tasks } }, current, recipe.name)
   }
+  async addDevice(current: DashboardSchedule, deviceType: DeviceType, count = 1): Promise<ReplanResult> {
+    if (!this.scheduleRequest) throw new Error('缺少初始排程请求，请重新生成排程')
+    const config = this.scheduleRequest.device_config as { devices: Array<{ device_id: string; device_type: string }> }
+    const suffix = config.devices
+      .filter(device => device.device_type === deviceType)
+      .reduce((max, device) => { const match = device.device_id.match(/(\d+)$/); return match ? Math.max(max, Number(match[1])) : max }, 0)
+    const devices = Array.from({ length: Math.max(1, count) }, (_, i) => makeDevice(deviceType, suffix + 1 + i))
+      .map(({ available: _available, ...device }) => device)
+    const stamp = `${Date.now()}_${++this.eventSequence}`
+    return this.replan({ schema_version: '1.0', event_id: `evt_${stamp}`, schedule_id: current.schedule_id, event_type: 'DEVICE_ADDED', occurred_at: new Date().toISOString(), payload: { devices } }, current)
+  }
 }
 
 const mockApi: CookFlowApi = {
@@ -185,7 +231,13 @@ const mockApi: CookFlowApi = {
     const result = await mockPostEvent(task, status)
     return {
       schedule: { ...current, tasks: current.tasks.map(item => item.task_id === task.task_id ? result.task : item) },
-      changes: [{ task_id: task.task_id, action: task.action, type: status === 'COMPLETED' ? 'LOCKED' : 'MOVED', detail: status === 'COMPLETED' ? '任务完成并锁定' : '事件已触发排程更新' }],
+      changes: status === 'COMPLETED'
+        ? [{ task_id: task.task_id, action: task.action, type: 'LOCKED' as const, detail: '任务完成并锁定' }]
+        : status === 'DELAYED'
+          ? [{ task_id: task.task_id, action: task.action, type: 'MOVED' as const, detail: '时间调整' }]
+          : status === 'EXCEPTION'
+            ? [{ task_id: task.task_id, action: task.action, type: 'RESOURCE_CHANGED' as const, detail: '设备异常，已重新安排' }]
+            : [],
       notifications: [result.notification],
       disruptionScore: 0,
     }
@@ -198,6 +250,27 @@ const mockApi: CookFlowApi = {
       notifications: [result.notification],
       disruptionScore: 0,
     }
+  },
+  addDevice: async (current, deviceType, count = 1) => {
+    const base = (RESOURCE_LABELS[`${deviceType}_1`] ?? deviceType).split(' · ')[0]
+    const existing = current.resources.filter(resource => resource.id.startsWith(`${deviceType}_`))
+    const suffix = existing.reduce((max, resource) => { const match = resource.id.match(/(\d+)$/); return match ? Math.max(max, Number(match[1])) : max }, 0)
+    const added: TimelineResource[] = Array.from({ length: Math.max(1, count) }, (_, i) => {
+      const index = suffix + 1 + i
+      return { id: `${deviceType}_${index}`, label: `${base} · ${String(index).padStart(2, '0')}`, tone: RESOURCE_TONES[index % RESOURCE_TONES.length] }
+    })
+    const notification: Notification = {
+      notification_id: `device-${Date.now()}`,
+      type: 'schedule_updated',
+      level: 'info',
+      trigger_offset_sec: 0,
+      dish_id: null,
+      action: `已新增设备：${base}`,
+      parameters: {},
+      message: '演示模式已更新设备资源',
+      created_at: new Date().toISOString(),
+    }
+    return { schedule: { ...current, resources: [...current.resources, ...added] }, changes: [], notifications: [notification], disruptionScore: 0 }
   },
 }
 

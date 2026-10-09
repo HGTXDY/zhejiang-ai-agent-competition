@@ -1,4 +1,4 @@
-import type { DashboardSchedule } from './contracts'
+import type { DashboardSchedule, DeviceType } from './contracts'
 
 export interface RecipeSummary {
   recipe_id: string
@@ -53,11 +53,13 @@ export interface AgentPlanResponse {
   tool_trace: { name: string; status: 'completed' | 'waiting'; label: string }[]
 }
 export interface AgentCommandResponse {
-  intent: 'add_dish' | 'device_unavailable' | 'task_delayed' | 'task_completed' | 'task_started' | 'unknown'
+  intent: 'add_dish' | 'device_unavailable' | 'task_delayed' | 'task_completed' | 'task_started' | 'add_device' | 'unknown'
   reply: string
   ready: boolean
   recipe_id?: string | null
   task_id?: string | null
   device_id?: string | null
+  device_type?: DeviceType | null
+  count?: number
   delay_sec?: number
 }

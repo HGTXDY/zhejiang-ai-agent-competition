@@ -65,6 +65,13 @@ def apply_event_to_request(request: dict[str, Any], event: dict[str, Any]) -> No
         for device in request["device_config"]["devices"]:
             if device["device_id"] == device_id:
                 device["available"] = False
+    if event["event_type"] == "DEVICE_ADDED":
+        request_devices = {device["device_id"] for device in request["device_config"]["devices"]}
+        for device in event["payload"]["devices"]:
+            if device["device_id"] in request_devices:
+                raise ReplanError("DUPLICATE_DEVICE", f"Device {device['device_id']} is already configured")
+            request["device_config"]["devices"].append(device)
+            request_devices.add(device["device_id"])
 
 
 # Existing request business checks include *availability* for every task.
@@ -133,6 +140,15 @@ def replan(
                 f"Device {device_id} is not present in the schedule request",
                 details=[{"code": "UNKNOWN_DEVICE", "message": device_id, "path": "event.payload.device_id"}],
             )
+    if event["event_type"] == "DEVICE_ADDED":
+        configured_devices = {device["device_id"] for device in request["device_config"]["devices"]}
+        for device in event["payload"]["devices"]:
+            if device["device_id"] in configured_devices:
+                raise ReplanError(
+                    "DUPLICATE_DEVICE",
+                    f"Device {device['device_id']} is already present in the schedule request",
+                    details=[{"code": "DUPLICATE_DEVICE", "message": device["device_id"], "path": "event.payload.devices"}],
+                )
 
     machine = ExecutionStateMachine(previous)
     try:

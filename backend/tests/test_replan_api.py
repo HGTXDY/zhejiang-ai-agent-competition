@@ -119,6 +119,45 @@ def test_replan_rejects_unknown_device_event():
     assert response.json()["error"]["code"] == "UNKNOWN_DEVICE"
 
 
+def test_replan_adds_device_and_replans():
+    request, previous = current_schedule()
+    new_device = {
+        "device_id": "stove_burner_3",
+        "device_type": "stove",
+        "capacity_units": 1,
+        "capabilities": {"modes": ["boil", "low_heat", "high_heat"], "temperature_min_c": 60, "temperature_max_c": 250},
+    }
+    body = {
+        "event": event("event-add-device-1", previous["schedule_id"], "DEVICE_ADDED", {"devices": [new_device]}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["schedule"]["validation"]["valid"] is True
+    assert result["schedule"]["metrics"]["device_conflicts"] == 0
+
+
+def test_replan_rejects_duplicate_device():
+    request, previous = current_schedule()
+    existing_id = request["device_config"]["devices"][0]["device_id"]
+    duplicate = {
+        "device_id": existing_id,
+        "device_type": "stove",
+        "capacity_units": 1,
+        "capabilities": {"modes": ["boil"], "temperature_min_c": 60, "temperature_max_c": 250},
+    }
+    body = {
+        "event": event("event-dup-device-1", previous["schedule_id"], "DEVICE_ADDED", {"devices": [duplicate]}),
+        "schedule_request": request,
+        "current_schedule": previous,
+    }
+    response = client.post("/v1/replans", json=body)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "DUPLICATE_DEVICE"
+
+
 def test_replan_marks_running_tasks_on_unavailable_device_and_preserves_pending_history():
     request, previous = current_schedule()
     configured_ids = {device["device_id"] for device in request["device_config"]["devices"]}
