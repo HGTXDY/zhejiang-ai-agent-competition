@@ -11,7 +11,7 @@ import type { ModelSettings, ModelSettingsUpdate, ParseResult, ParsedTask } from
 import type { DashboardSchedule } from './types/contracts'
 import type { KitchenConfig, RecipeSummary } from './types/product'
 import { formatDevice, formatDuration, formatMode } from './lib/presentation'
-import { clearSession, loadSession, saveSession } from './lib/persistence'
+import { clearAll, loadSession, saveSession } from './lib/persistence'
 import './styles.css'
 
 type ProductStep = 'recipes' | 'kitchen' | 'confirm' | 'result'
@@ -136,8 +136,8 @@ export default function App() {
     setSchedule(null); setExecutionStarted(false); setConfirmed(false); setStep(planSource === 'agent' ? 'recipes' : 'kitchen')
   }
   function resetPlanning() {
-    if (!window.confirm('确定要重置所有计划数据吗？已选的菜谱、厨房条件和生成的排程都会被清空。')) return
-    clearSession()
+    if (!window.confirm('确定要重置所有计划数据吗？已选的菜谱、厨房条件、生成的排程和聊天记录都会被清空。')) return
+    clearAll()
     setStep('recipes'); setPlanningMode('choose'); setPlanSource('manual'); setManualFlow(false); setQuery('')
     setSelectedIds([]); setKitchen(defaultKitchen); setParsed([]); setConfirmed(false); setSchedule(null); setExecutionStarted(false)
     setValidationErrors([]); setWarnings([])

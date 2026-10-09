@@ -103,3 +103,16 @@ it('keeps the last valid draft and explains a temporary model failure', async ()
   expect(mockedInterpret.mock.calls[1][2]).toEqual(validPlan.draft)
   expect(mockedInterpret.mock.calls[2][2]).toEqual(validPlan.draft)
 })
+
+it('restores the chat history after being remounted', async () => {
+  mockedInterpret.mockResolvedValueOnce({ ...validPlan, reply: '收到，已记录清蒸鱼。' })
+  const props = { step: 'recipes' as const, catalog: [], loading: false, modelReady: true, offlineDemo: false, onOpenSettings: vi.fn(), onBack: vi.fn(), onConfirm: vi.fn() }
+  const first = render(<AgentPlanner {...props} />)
+  send('我要做清蒸鱼')
+  await screen.findByText('收到，已记录清蒸鱼。')
+  first.unmount()
+
+  render(<AgentPlanner {...props} />)
+  expect(screen.getByText('我要做清蒸鱼')).toBeInTheDocument()
+  expect(screen.getByText('收到，已记录清蒸鱼。')).toBeInTheDocument()
+})
