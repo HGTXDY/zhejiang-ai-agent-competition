@@ -1,0 +1,33 @@
+/* Fix 05: stage-specific styles. Execution/Gantt styles are untouched.
+   Colours come from the 01B tokens in styles.css (cocoa / rose / butter warm
+   family) so this page follows main's theme without editing shared selectors. */
+.result-metric-note { color: var(--muted); font-size: 12px; margin: -7px 0 3px; }
+.result-advance { border: 1px solid var(--line); border-radius: 13px; padding: 16px; background: var(--paper); }
+.result-advance-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.result-advance-heading h3 { font-size: 17px; margin: 0; }
+.result-advance-heading h3 span, .result-advance-heading small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.result-advance > p { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 10px 0 14px; }
+.result-advance ul { padding: 0; margin: 0; list-style: none; display: grid; gap: 8px; }
+.result-advance li { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--paper); }
+.result-advance li label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.result-advance li input { accent-color: var(--green); width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; }
+.result-advance-task { display: grid; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+.result-advance-task b { color: var(--ink); font-size: 14px; line-height: 1.6; font-weight: 600; }
+.result-advance-task small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.result-advance-step-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.result-advance-step-label span:nth-child(2) { color: var(--ink); font-weight: 700; font-size: 14px; }
+/* Warm "hold / hands-off" tag, contrast-checked against --cf-butter. */
+.result-advance-step-label em { font-style: normal; color: #674b08; background: var(--gold); border-radius: 12px; padding: 2px 8px; font-size: 11px; }
+.result-advance-duration { font-weight: 600; }
+.result-advance-times { color: var(--ink) !important; }
+.result-advance-done { font-size: 12px; color: var(--muted); }
+.result-confirm-advance { margin-top: 12px; }
+.result-advance .result-check-badge { margin: 12px 0 0; }
+.result-advance-review { color: #81531d; background: #fff5dc; border: 1px solid #e6cd9c; border-radius: 11px; padding: 12px 16px; font-size: 12px; line-height: 1.6; }
+.result-advance-review ul { margin: 6px 0 0; padding-left: 20px; }
+.result-advance .result-advance-warning { color: #81531d; background: #fff7e8; border: 1px solid #e6cd9c; border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
+
+/* A deadline that cannot be met is the only alarming state on this page, so it
+   borrows the single warning hue instead of the rose/cocoa family. */
+.result-time-card.finish.overdue { border-color: var(--danger); background: var(--danger-soft); }
+.result-time-card.finish.overdue strong { color: var(--danger); }

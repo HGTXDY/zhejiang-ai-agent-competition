@@ -1,4 +1,4 @@
-import type { ParseResult } from '../api/product'
+import type { InitialRequest, ParseResult, StagedPlanResponse } from '../api/product'
 import type { DashboardSchedule } from '../types/contracts'
 import type { AgentPlanResponse, KitchenConfig } from '../types/product'
 
@@ -17,6 +17,8 @@ export interface SessionState {
   confirmed: boolean
   schedule: DashboardSchedule | null
   executionStarted: boolean
+  stagedPlan: StagedPlanResponse | null
+  stagedRequest: InitialRequest | null
 }
 
 export interface AgentMessage { role: 'agent' | 'user'; text: string }
@@ -62,6 +64,8 @@ export function loadSession(): SessionState | null {
       confirmed: value.confirmed === true,
       schedule: value.schedule && typeof value.schedule === 'object' ? value.schedule as DashboardSchedule : null,
       executionStarted: value.executionStarted === true,
+      stagedPlan: value.stagedPlan && typeof value.stagedPlan === 'object' ? value.stagedPlan as StagedPlanResponse : null,
+      stagedRequest: value.stagedRequest && typeof value.stagedRequest === 'object' ? value.stagedRequest as InitialRequest : null,
     }
   } catch {
     return null

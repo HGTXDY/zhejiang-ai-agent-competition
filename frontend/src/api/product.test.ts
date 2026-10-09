@@ -111,6 +111,59 @@ describe('device configuration', () => {
   })
 })
 
+describe('explicit dinner date', () => {
+  const now = new Date(2026, 9, 9, 9, 0) // 2026-10-09 09:00 local
+
+  it('honours today when the chosen time is still ahead', () => {
+    const config = buildDeviceConfig({ ...kitchen, target_date: '2026-10-09', target_time: '12:30' }, now)
+    const target = new Date(config.target_ready_at)
+    expect(target.getDate()).toBe(9)
+    expect(target.getHours()).toBe(12)
+    expect(target.getMinutes()).toBe(30)
+  })
+
+  it('honours tomorrow 12:30 instead of inferring it from the clock', () => {
+    const config = buildDeviceConfig({ ...kitchen, target_date: '2026-10-10', target_time: '12:30' }, now)
+    const target = new Date(config.target_ready_at)
+    expect(target.getMonth()).toBe(9)
+    expect(target.getDate()).toBe(10)
+    expect(target.getHours()).toBe(12)
+  })
+
+  it('honours a date three days out', () => {
+    const config = buildDeviceConfig({ ...kitchen, target_date: '2026-10-12', target_time: '12:30' }, now)
+    const target = new Date(config.target_ready_at)
+    expect(target.getDate()).toBe(12)
+    expect(target.getHours()).toBe(12)
+  })
+
+  it('never silently rolls an already-passed choice forward to tomorrow', () => {
+    // The legacy behaviour would have produced 2026-10-10 here; the explicit
+    // date must instead fail loudly so the user resolves it.
+    expect(() => buildDeviceConfig({ ...kitchen, target_date: '2026-10-08', target_time: '12:30' }, now)).toThrow(/已经过去/)
+    expect(() => buildDeviceConfig({ ...kitchen, target_date: '2026-10-09', target_time: '08:00' }, now)).toThrow(/已经过去/)
+  })
+
+  it('rejects a malformed date rather than guessing', () => {
+    expect(() => buildDeviceConfig({ ...kitchen, target_date: '2026/10/11', target_time: '12:30' }, now)).toThrow(/有效的开饭日期/)
+    expect(() => buildDeviceConfig({ ...kitchen, target_date: '2026-02-30', target_time: '12:30' }, now)).toThrow()
+  })
+
+  it('keeps the legacy clock-only behaviour for Agent drafts and old sessions', () => {
+    // `target_date` absent -> today, or tomorrow once today's time has passed.
+    expect(new Date(buildDeviceConfig({ ...kitchen, target_time: '12:30' }, now).target_ready_at).getDate()).toBe(9)
+    expect(new Date(buildDeviceConfig({ ...kitchen, target_time: '08:00' }, now).target_ready_at).getDate()).toBe(10)
+  })
+
+  it('round-trips the same local wall clock it was given, day included', () => {
+    const config = buildDeviceConfig({ ...kitchen, target_date: '2026-10-11', target_time: '12:30' }, now)
+    const target = new Date(config.target_ready_at)
+    // The instant is absolute, but the local fields must match the selection.
+    expect([target.getFullYear(), target.getMonth() + 1, target.getDate(), target.getHours(), target.getMinutes()])
+      .toEqual([2026, 10, 11, 12, 30])
+  })
+})
+
 describe('parser provider', () => {
   it('adds the llm provider only when AI parsing is selected', async () => {
     const fetcher = vi.fn(async (url: string) => json({ schema_version: '1.0', recipe_id: 'r1', provider: 'llm', tasks: [] }))

@@ -1,5 +1,7 @@
 import { initialSchedule } from './schedule'
 import { recipeCatalog } from './recipes'
+import { kitchenTargetReadyAt } from '../api/product'
+import { targetDateTimeError } from '../lib/planningTime'
 import type { DashboardSchedule, DashboardTask, TimelineResource } from '../types/contracts'
 import type { KitchenConfig, ProductScheduleRequest, ProductScheduleResult, RecipeValidation } from '../types/product'
 
@@ -14,7 +16,16 @@ export async function validateProductRequest(request: ProductScheduleRequest): P
   if (request.kitchen.stove_count < 1 && request.kitchen.steamer_count < 1 && request.kitchen.oven_count < 1) errors.push('至少配置一种烹饪设备')
   const unknown = request.recipe_ids.filter(id => !recipeCatalog.some(recipe => recipe.recipe_id === id))
   if (unknown.length) errors.push('存在无法识别的菜谱，请重新选择')
-  if (request.kitchen.target_time < '11:00' || request.kitchen.target_time > '22:00') warnings.push('目标开饭时间超出常规演示时段，请确认')
+  // Demo mode derives the same deadline the HTTP path sends, so Mock and HTTP
+  // agree on the target instant. A past deadline is an explicit error here too
+  // rather than a silently rolled-forward day.
+  const targetIso = kitchenTargetReadyAt(request.kitchen)
+  if (targetIso === null) {
+    errors.push(targetDateTimeError(request.kitchen.target_date ?? '', request.kitchen.target_time) ?? '请填写有效的开饭日期和时间')
+  } else {
+    const targetHour = new Date(targetIso).getHours()
+    if (targetHour < 11 || targetHour > 22) warnings.push('目标开饭时间超出常规演示时段，请确认')
+  }
   return { valid: errors.length === 0, errors, warnings }
 }
 
@@ -60,6 +71,7 @@ export async function createMockSchedule(request: ProductScheduleRequest): Promi
     tasks,
     resources,
     target_time: request.kitchen.target_time,
+    target_ready_at: kitchenTargetReadyAt(request.kitchen) ?? undefined,
     validation: { valid: true, errors: [] },
   }
   return { schedule, validation }

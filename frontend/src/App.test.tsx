@@ -23,6 +23,9 @@ async function flow(names: string[]) {
   for (const name of names) fireEvent.click(await screen.findByRole('button', { name: new RegExp(name) }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：配置厨房/ }))
   await screen.findByText('告诉我你的厨房现在有什么')
+  // A wall-clock time alone is no longer accepted, so pick an explicit day that
+  // is guaranteed to be in the future regardless of when the suite runs.
+  fireEvent.click(screen.getByRole('button', { name: '明天' }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
   await screen.findByText('确认菜谱解析结果')
   fireEvent.click(screen.getAllByRole('checkbox')[0])
@@ -114,7 +117,18 @@ it('HTTP: kitchen configuration reaches the real schedule request and the genera
     if (path.startsWith('/recipes/') && path !== '/recipes/parse') return json({ schema_version: '1.0', recipe_id: path.split('/').pop(), name: '真实菜', ingredients: ['食材'], steps_text: ['备料一分钟'] })
     if (path === '/recipes/parse') { parseUrls.push(url); return json({ schema_version: '1.0', recipe_id: body.recipe_id, provider: 'deterministic', tasks: tasks.filter(task => task.dish_id === body.recipe_id) }) }
     if (path === '/devices/validate') return json({ valid: true, errors: [] })
-    if (path === '/schedules') { initialRequest = body; return json({ ...schedule, request_id: body.request_id }) }
+    if (path === '/schedules/staged') {
+      initialRequest = body.schedule_request
+      return json({ schema_version: '1.0', request_id: initialRequest.request_id,
+        status: 'READY', can_start_main: true, advance_task_ids: [], pending_advance_task_ids: [],
+        review_required: [], advance_schedule: null,
+        main_schedule: { ...schedule, request_id: initialRequest.request_id },
+        executable_main_request: initialRequest,
+        timing: { target_ready_at: initialRequest.device_config.target_ready_at,
+          suggested_advance_start_at: null, advance_finish_by: null, suggested_main_start_at: null,
+          advance_makespan_sec: 0, main_makespan_sec: 780, total_elapsed_sec: 780,
+          advance_start_offset_sec: 0, main_start_offset_sec: 0, total_finish_offset_sec: 780 } })
+    }
     throw new Error(`Unexpected backend/Demo request: ${path}`)
   })
   vi.stubGlobal('fetch', fetcher)
@@ -127,6 +141,8 @@ it('HTTP: kitchen configuration reaches the real schedule request and the genera
   await screen.findByText('告诉我你的厨房现在有什么')
 
   fireEvent.change(screen.getByLabelText('灶眼', { selector: 'input' }), { target: { value: '2' } })
+  // Pick an explicit future day: a bare clock time is no longer a valid deadline.
+  fireEvent.click(screen.getByRole('button', { name: '明天' }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
   await screen.findByText('确认菜谱解析结果')
   expect(screen.getByText(/2 个灶眼/)).toBeInTheDocument()
@@ -137,6 +153,8 @@ it('HTTP: kitchen configuration reaches the real schedule request and the genera
 
   fireEvent.click(screen.getByRole('button', { name: /返回配置/ }))
   expect(await screen.findByLabelText('灶眼', { selector: 'input' })).toHaveValue(2)
+  // Pick an explicit future day: a bare clock time is no longer a valid deadline.
+  fireEvent.click(screen.getByRole('button', { name: '明天' }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
   await screen.findByText('确认菜谱解析结果')
 
@@ -147,12 +165,104 @@ it('HTTP: kitchen configuration reaches the real schedule request and the genera
   expect(initialRequest.device_config.devices.filter((device: any) => device.device_type === 'stove')).toHaveLength(2)
   expect(parseUrls).toHaveLength(6)
   expect(parseUrls.every(url => !url.includes('provider=llm'))).toBe(true)
-  expect(fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/schedules')).toHaveLength(1)
+  expect(fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/schedules/staged')).toHaveLength(1)
+  const result = within(screen.getByRole('region', { name: '排程结果确认' }))
+  expect(result.getByText('建议开始')).toBeInTheDocument()
+  // Suggested start keeps the day too, so a deadline that is not today is never
+  // mistaken for a same-day clock time.
+  expect(result.getByText('10月10日 12:17')).toBeInTheDocument()
+  expect(result.getByText('目标开饭')).toBeInTheDocument()
+  // The deadline is shown as a full local date + time, not a bare clock time,
+  // so the day the user picked is unambiguous on the result page. It appears
+  // both as the headline value and in the supporting note.
+  expect(result.getAllByText(/10月\d+日 12:30/).length).toBeGreaterThan(0)
+  expect(result.getByText('预计总用时')).toBeInTheDocument()
+  expect(result.getByText('13 分钟')).toBeInTheDocument()
+  expect(result.getByText('已通过约束校验')).toBeInTheDocument()
+  for (const name of ['真实菜0', '真实菜1', '真实菜2']) expect(result.getByText(name)).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: '开始做饭 →' }))
   expect(await screen.findByText('接下来做什么')).toBeInTheDocument()
-  expect(fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/schedules')).toHaveLength(1)
+  expect(fetcher.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/schedules/staged')).toHaveLength(1)
   expect(fetcher.mock.calls.some(([url]) => String(url).includes('/demo/'))).toBe(false)
+})
+
+it('HTTP: advance preparation is included in total elapsed time and requires explicit confirmation before main execution', async () => {
+  vi.stubEnv('VITE_API_MODE', 'http')
+  const advanceId = `${ids[0]}_advance`
+  let stagedCalls = 0
+  let lastMainRequest: any
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    const path = new URL(url, 'http://test').pathname
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    if (path === '/recipes') return json({ recipes: ids.map((id, index) => ({ recipe_id: id, name: `阶段菜${index}`, step_count: id === ids[0] ? 2 : 1, ingredient_count: 1 })) })
+    if (path === '/settings/model') return json({ parser_provider: 'deterministic', configured: false, ready: false, base_url: null, model: 'gpt-4o-mini', api_key_masked: null, source: 'runtime', notes: [] })
+    if (path.startsWith('/recipes/') && path !== '/recipes/parse') return json({ schema_version: '1.0', recipe_id: path.split('/').pop(), name: '阶段菜', ingredients: ['食材'], steps_text: ['冷冻24小时', '做饭'] })
+    if (path === '/recipes/parse') {
+      const id = body.recipe_id
+      const found = tasks.find(task => task.dish_id === id)!
+      return json({ schema_version: '1.0', recipe_id: id, provider: 'deterministic', tasks: id === ids[0]
+        ? [{ ...found, task_id: advanceId, action: '提前冷冻24小时', duration_sec: 86400, resource_type: 'wait', manual_required: false, manual_duration_sec: 0, manual_segments: [] }, { ...found, predecessors: [advanceId] }]
+        : [found] })
+    }
+    if (path === '/devices/validate') return json({ valid: true, errors: [] })
+    if (path === '/schedules/staged') {
+      stagedCalls++
+      const original = body.schedule_request
+      const advance = original.tasks.find((task: any) => task.task_id === advanceId)
+      const mainTasks = original.tasks.filter((task: any) => task.task_id !== advanceId)
+      const executable = { ...original, request_id: `${original.request_id}_main`, tasks: mainTasks.map((task: any) => ({ ...task, predecessors: task.predecessors.filter((id: string) => id !== advanceId) })) }
+      lastMainRequest = executable
+      const done = body.confirmed_advance_task_ids.includes(advanceId)
+      return json({ schema_version: '1.0', request_id: original.request_id,
+        status: done ? 'READY' : 'PREPARATION_REQUIRED', can_start_main: done,
+        advance_task_ids: [advanceId], pending_advance_task_ids: done ? [] : [advanceId], review_required: [],
+        advance_schedule: { ...schedule, request_id: `${original.request_id}_advance`, tasks: [{ ...schedule.tasks[0], task_id: advanceId, dish_id: ids[0], start_offset_sec: 0, end_offset_sec: 86400 }], metrics: { ...schedule.metrics, makespan_sec: 86400 } },
+        main_schedule: { ...schedule, request_id: executable.request_id },
+        executable_main_request: done ? executable : null,
+        timing: { target_ready_at: original.device_config.target_ready_at, suggested_advance_start_at: null,
+          advance_finish_by: null, suggested_main_start_at: null, advance_makespan_sec: 86400,
+          main_makespan_sec: 780, total_elapsed_sec: 87180, advance_start_offset_sec: 0,
+          main_start_offset_sec: 86400, total_finish_offset_sec: 87180 } })
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const App = (await import('./App')).default
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /手动精确配置/ }))
+  for (const name of ['阶段菜0', '阶段菜1', '阶段菜2']) fireEvent.click(await screen.findByRole('button', { name: new RegExp(name) }))
+  fireEvent.click(screen.getByRole('button', { name: /下一步：配置厨房/ }))
+  await screen.findByText('告诉我你的厨房现在有什么')
+  // Pick an explicit future day: a bare clock time is no longer a valid deadline.
+  fireEvent.click(screen.getByRole('button', { name: '明天' }))
+  fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
+  await screen.findByText('确认菜谱解析结果')
+  fireEvent.click(screen.getAllByRole('checkbox')[0])
+  fireEvent.click(screen.getByRole('button', { name: /生成初始排程/ }))
+  const result = within(await screen.findByRole('region', { name: '排程结果确认' }))
+  expect(result.getByText('整体总历时（含提前准备）')).toBeInTheDocument()
+  expect(result.getByText('24 小时 13 分钟')).toBeInTheDocument()
+  expect(within(result.getByLabelText('分阶段排程指标')).getByText('24 小时')).toBeInTheDocument()
+  expect(result.getByText('13 分钟')).toBeInTheDocument()
+  expect(result.getByRole('button', { name: '开始做饭 →' })).toBeDisabled()
+  const advance = within(result.getByRole('region', { name: '提前准备计划' }))
+  expect(advance.getByText('阶段菜0')).toBeInTheDocument()
+  expect(advance.getByText('提前冷冻24小时')).toBeInTheDocument()
+  expect(advance.queryByText(ids[0])).not.toBeInTheDocument()
+  expect(advance.getByText('预计需要 24 小时')).toBeInTheDocument()
+  const confirm = result.getByRole('button', { name: /确认 1 项提前准备已实际完成/ })
+  expect(confirm).toBeDisabled()
+  fireEvent.click(result.getByRole('checkbox'))
+  expect(confirm).toBeEnabled()
+  fireEvent.click(confirm)
+  await screen.findByText('全部提前准备已确认，可以开始正式烹饪')
+  expect(stagedCalls).toBe(2)
+  expect(lastMainRequest.tasks.map((task: any) => task.task_id)).not.toContain(advanceId)
+  expect(result.getByRole('button', { name: '开始做饭 →' })).toBeEnabled()
+  fireEvent.click(result.getByRole('button', { name: '开始做饭 →' }))
+  expect(await screen.findByText('接下来做什么')).toBeInTheDocument()
+  expect(fetcher.mock.calls.some(([url]) => new URL(String(url)).pathname === '/schedules')).toBe(false)
 })
 
 it('HTTP: device validation failure stays on kitchen configuration and never creates a schedule', async () => {
@@ -172,6 +282,8 @@ it('HTTP: device validation failure stays on kitchen configuration and never cre
   for (const name of ['校验菜0', '校验菜1', '校验菜2']) fireEvent.click(await screen.findByRole('button', { name: new RegExp(name) }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：配置厨房/ }))
   await screen.findByText('告诉我你的厨房现在有什么')
+  // Pick an explicit future day: a bare clock time is no longer a valid deadline.
+  fireEvent.click(screen.getByRole('button', { name: '明天' }))
   fireEvent.click(screen.getByRole('button', { name: /下一步：解析确认/ }))
 
   expect(await screen.findByText(/厨房设备配置未通过校验/)).toBeInTheDocument()

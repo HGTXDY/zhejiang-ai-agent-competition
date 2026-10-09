@@ -35,7 +35,7 @@ export interface ScheduleResponse {
   timings_ms: { parse: number; validation: number; solve: number; notification: number; total: number }
   notifications: Notification[]
 }
-export type DashboardSchedule = Omit<ScheduleResponse, 'tasks'> & { tasks: DashboardTask[]; resources: TimelineResource[]; target_time?: string }
+export type DashboardSchedule = Omit<ScheduleResponse, 'tasks'> & { tasks: DashboardTask[]; resources: TimelineResource[]; target_time?: string; target_ready_at?: string }
 export interface Notification {
   notification_id: string
   level: NotificationLevel

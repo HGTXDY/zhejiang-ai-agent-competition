@@ -9,7 +9,22 @@ export interface RecipeSummary {
 }
 
 export interface KitchenConfig {
+  /**
+   * Local calendar day for the dinner deadline, `YYYY-MM-DD`.
+   *
+   * Optional so previously persisted sessions (and the Agent draft, which only
+   * understands a wall-clock time) keep loading; `buildDeviceConfig` falls back
+   * to today only when the value is absent, never when it is present but stale.
+   */
+  target_date?: string
   target_time: string
+  /**
+   * The instant `target_date` + `target_time` describe in the user's local
+   * timezone, kept on the config so both the HTTP request builder and the Mock
+   * scheduler derive the deadline from one value instead of two independent
+   * clock conversions. Derived, never hand-edited.
+   */
+  target_ready_at?: string
   operator_count: number
   stove_count: number
   steamer_count: number
