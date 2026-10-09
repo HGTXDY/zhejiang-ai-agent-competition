@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { draftToKitchen, interpretAgentMessage } from '../api/agent'
 import { ProductApiError } from '../api/product'
+import { loadAgentChat, saveAgentChat } from '../lib/persistence'
 import type { AgentPlanResponse, KitchenConfig, RecipeSummary } from '../types/product'
 
 interface Message { role: 'agent' | 'user'; text: string }
 interface Props { step: 'recipes' | 'confirm'; catalog: RecipeSummary[]; loading: boolean; modelReady: boolean; offlineDemo: boolean; onOpenSettings: () => void; onBack: () => void; onConfirm: (ids: string[], kitchen: KitchenConfig) => Promise<void> }
 const example = '晚上六点半开饭，我一个人，做苹果芒果派、香烤排骨和麻辣对虾，有一个灶眼、一个蒸箱、一个烤箱、一个冰箱、一个洗碗机、一个烟机、一个净水机。'
+const greeting: Message = { role: 'agent', text: '你好，我是灶序。你可以问我菜谱库里有什么，也可以直接告诉我今天想吃什么，我会边聊边帮你把计划补齐。' }
 
 export default function AgentPlanner({ step, catalog, loading, modelReady, offlineDemo, onOpenSettings, onBack, onConfirm }: Props) {
-  const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([{ role: 'agent', text: '你好，我是灶序。你可以问我菜谱库里有什么，也可以直接告诉我今天想吃什么，我会边聊边帮你把计划补齐。' }])
-  const [result, setResult] = useState<AgentPlanResponse | null>(null)
+  const [savedChat] = useState(() => loadAgentChat())
+  const [input, setInput] = useState(savedChat?.input ?? '')
+  const [messages, setMessages] = useState<Message[]>(savedChat?.messages ?? [greeting])
+  const [result, setResult] = useState<AgentPlanResponse | null>(savedChat?.result ?? null)
   const [busy, setBusy] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [requirementsOpen, setRequirementsOpen] = useState(false)
@@ -28,6 +31,9 @@ export default function AgentPlanner({ step, catalog, loading, modelReady, offli
     const timer = window.setTimeout(() => composerRef.current?.focus(), 0)
     return () => window.clearTimeout(timer)
   }, [chatOpen])
+  useEffect(() => {
+    saveAgentChat({ messages, result, input })
+  }, [messages, result, input])
   async function send(text = input) {
     const message = text.trim(); if (!message || busy || !modelReady) return
     setMessages(current => [...current, { role: 'user', text: message }]); setInput(''); setBusy(true)

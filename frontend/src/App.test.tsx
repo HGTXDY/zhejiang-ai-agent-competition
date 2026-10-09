@@ -271,3 +271,42 @@ it('requires a configured model before enabling the Agent conversation', async (
   expect(screen.getByLabelText('告诉智能助手你的做饭需求')).toBeDisabled()
   expect(screen.getByRole('button', { name: '发送 ↑' })).toBeDisabled()
 })
+
+it('persists the planning session and restores it after a refresh', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  let App = (await import('./App')).default
+  const first = render(<App />)
+  await screen.findByText('服务已连接')
+  fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
+  await screen.findByText(recipeCatalog[0].name, { selector: '.recipe-card strong', exact: true })
+  for (const recipe of recipeCatalog.slice(0, 3)) fireEvent.click(recipeCardButton(recipe.name))
+  const saved = JSON.parse(localStorage.getItem('cookflow.session.v1')!)
+  expect(saved.planningMode).toBe('manual')
+  expect(saved.selectedIds).toHaveLength(3)
+  first.unmount()
+
+  vi.resetModules()
+  App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText(recipeCatalog[0].name, { selector: '.recipe-card strong', exact: true })
+  expect(screen.getByLabelText('已选择 3 道菜，最多 5 道')).toBeInTheDocument()
+})
+
+it('reset button clears the persisted session and returns to the landing', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  const App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText('服务已连接')
+  fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
+  await screen.findByText(recipeCatalog[0].name, { selector: '.recipe-card strong', exact: true })
+  for (const recipe of recipeCatalog.slice(0, 3)) fireEvent.click(recipeCardButton(recipe.name))
+  expect(JSON.parse(localStorage.getItem('cookflow.session.v1')!).selectedIds).toHaveLength(3)
+
+  fireEvent.click(screen.getByRole('button', { name: '重置' }))
+  const after = JSON.parse(localStorage.getItem('cookflow.session.v1')!)
+  expect(after.planningMode).toBe('choose')
+  expect(after.selectedIds).toHaveLength(0)
+  expect(screen.getByText('自然语言驱动规划')).toBeInTheDocument()
+  expect(screen.getByText('自定义时序编排')).toBeInTheDocument()
+})

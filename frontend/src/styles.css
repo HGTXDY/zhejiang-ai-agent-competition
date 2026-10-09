@@ -1031,6 +1031,8 @@ body { min-height: 100%; }
 .model-settings-trigger { display:inline-flex; align-items:center; gap:7px; min-height:34px; padding:0 10px; border:1px solid transparent; border-radius:10px; color:#5d6962; background:transparent; box-shadow:none; font-size:11px; font-weight:680; }
 .model-settings-trigger svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.45; }
 .model-settings-trigger:hover { border-color:rgba(71,83,76,.14); color:#b95530; background:rgba(255,255,255,.48); box-shadow:none; }
+.reset-trigger { display:inline-flex; align-items:center; min-height:34px; padding:0 12px; border:1px solid transparent; border-radius:10px; color:#5d6962; background:transparent; box-shadow:none; font-size:11px; font-weight:680; cursor:pointer; }
+.reset-trigger:hover { border-color:rgba(190,80,60,.2); color:#b34a2e; background:rgba(255,255,255,.48); box-shadow:none; }
 .product-content-choose {
   display: flex;
   flex-direction: column;
