@@ -28,6 +28,7 @@ from app.device_check import validate_device_config
 from app.parser.adapter import InputRecipeError, ParsedTaskError, RecipeParser
 from app.parser.deterministic import DeterministicParserAdapter
 from app.parser.llm import LLMParserAdapter
+from app.preparation_phases import classify_preparation_phases
 from app.model_config import ModelConfigService
 from app.replan import ReplanError, apply_event_to_request, replan
 from app.scheduler import schedule
@@ -304,6 +305,7 @@ def create_app(app_store: ScheduleStore | None = None) -> FastAPI:
             "recipe_id": result.recipe_id,
             "provider": result.provider,
             "tasks": list(result.tasks),
+            "preparation_phases": classify_preparation_phases(list(result.tasks)),
         }
 
     @app.post("/devices/validate")
