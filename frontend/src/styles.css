@@ -624,11 +624,11 @@ body { min-height: 100%; }
 .selection-panel .wide { flex: 0 0 auto; margin-top: 12px; }
 .selection-requirement { flex: 0 0 auto; margin-bottom: 0; }
 .selection-empty { flex: 1 1 auto; min-height: 0; }
-.compact-heading { flex: 0 0 auto; margin-bottom: 13px; }
-.config-card { flex: 1 1 auto; min-height: 0; overflow-y: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 2px 5px 2px 2px; }
+.compact-heading { flex: 0 0 auto; margin-bottom: 8px; }
+.config-card { flex: 1 1 auto; min-height: 0; overflow-y: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 0; padding: 2px 5px 2px 2px; }
 .config-card label { min-height: 87px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper-2); }
 .config-card .target-time { grid-column: span 1; background: var(--green-soft); }
-.number-input { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 4px; margin-top: 8px; }
+.number-input { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 4px; margin-top: 0; margin-bottom: 6px; }
 .number-input button { border: 1px solid var(--line); border-radius: 8px; color: var(--green); background: #fff; }
 .number-input input { min-width: 0; text-align: center; }
 .setup-actions { flex: 0 0 auto; margin-top: 12px; }
@@ -1183,15 +1183,18 @@ body { min-height: 100%; }
 /* ===== Fix 05 (P3) 追加：开饭日期选择 + 手动排程结果页（仅追加，不改动 main 主题） ===== */
 /* 开饭日期 + 时间共用一张卡片：日期决定 target_ready_at 的“天”，时间决定“时刻”。 */
 .config-card .target-datetime {
-  grid-column: span 3; display: grid; gap: 8px; min-height: 87px; padding: 12px;
+  grid-column: span 3; display: grid; gap: 8px; padding: 12px;
   border: 1px solid var(--line); border-radius: 13px; background: var(--green-soft);
 }
 .config-card .target-datetime label { min-height: 0; padding: 0; border: 0; background: transparent; }
-.config-card .target-datetime-field { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 10px; }
+.config-card .target-datetime-field { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: 10px; }
+/* 日期框：日期输入在前，今天/明天快捷键紧随其后同排展示。 */
+.config-card .target-date { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.config-card .date-with-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.config-card .date-with-quick input[type="date"] { flex: 1 1 140px; min-width: 0; }
 .config-card .target-datetime input[type="date"],
 .config-card .target-datetime input[type="time"] { min-height: 46px; font-size: 14px; }
-/* 今天/明天快捷选择与“距今几天”的明确说明。 */
-.config-card .target-day-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.config-card .target-day-quick { display: flex; align-items: center; gap: 6px; }
 .config-card .target-day-quick button {
   min-height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px;
   color: var(--muted); background: var(--paper); font-size: 12px; font-weight: 700;
@@ -1199,7 +1202,7 @@ body { min-height: 100%; }
 .config-card .target-day-quick button:hover:not(:disabled) { border-color: var(--orange); color: var(--orange-dark); }
 .config-card .target-day-quick button.active { border-color: var(--green); color: #fff; background: var(--green); }
 .config-card .target-day-quick button:disabled { cursor: not-allowed; opacity: .55; }
-.config-card .target-day-note { color: var(--muted); font-size: 12px; font-weight: 650; }
+.config-card .target-day-note { color: var(--muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
 /* 已过去的时间不给通过：只提示、不自动改期。 */
 .config-card .config-error {
   grid-column: span 3; margin: 0; padding: 10px 12px; border: 1px solid #e0b6b2; border-radius: 11px;
