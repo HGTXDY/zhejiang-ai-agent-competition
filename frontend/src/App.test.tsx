@@ -310,3 +310,19 @@ it('reset button clears the persisted session and returns to the landing', async
   expect(screen.getByText('自然语言驱动规划')).toBeInTheDocument()
   expect(screen.getByText('自定义时序编排')).toBeInTheDocument()
 })
+
+it('exits the manual dish selection back to the homepage', async () => {
+  vi.stubEnv('VITE_API_MODE', 'mock')
+  const App = (await import('./App')).default
+  render(<App />)
+  await screen.findByText('服务已连接')
+
+  fireEvent.click(screen.getByRole('button', { name: /手动精确配置/ }))
+  expect(await screen.findByText('选择今天要做的菜')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /返回主页/ })).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: /返回主页/ }))
+  expect(screen.getByText('自然语言驱动规划')).toBeInTheDocument()
+  expect(screen.getByText('自定义时序编排')).toBeInTheDocument()
+  expect(screen.queryByText('选择今天要做的菜')).not.toBeInTheDocument()
+})

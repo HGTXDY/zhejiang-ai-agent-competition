@@ -312,6 +312,16 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .task-bar.browse b { font-size: 11px; line-height: 1.35; }
 .axis.browse-hint { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--faint); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .axis.browse-hint .hint-line { flex: 1; border-bottom: 1px dashed var(--line-strong); align-self: center; }
+/* 工序浏览：把表头与泳道并入同一网格，时间轴与工序块共享 max-content 宽度，横向滚动不再截断 */
+.view-log .timeline-board { display: grid; grid-template-columns: 138px minmax(820px, max-content); }
+.view-log .timeline-board > .timeline-grid-header,
+.view-log .timeline-board > .timeline-row { display: contents; }
+.view-log .axis.browse-hint { position: sticky; top: 0; z-index: 8; background: var(--paper); }
+.view-log .dish-lane-label.header-label { top: 0; z-index: 9; }
+/* 资源占用与上方甘特图共用同一网格列，标签列/轨道列宽度严格对齐 */
+.view-log .timeline-board > .resource-section-title { grid-column: 1 / -1; }
+.view-log .timeline-board > .resource-grid { display: contents; }
+.resource-label { position: sticky; left: 0; z-index: 6; }
 .lower-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .65fr); gap: 16px; margin-top: 16px; }
 .task-panel, .detail-panel, .notification-panel, .diff-panel { padding: 23px; }
 .panel-heading > span { color: var(--faint); font-size: 10px; }
@@ -867,6 +877,7 @@ body { min-height: 100%; }
 .agent-chat-card { display: flex; flex-direction: column; overflow: hidden; }
 .agent-card-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .text-back { padding: 0; border: 0; color: var(--muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+.planner-main > .text-back { align-self: flex-start; margin: 0 0 10px; }
 .agent-card-head > span { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 10px; font-weight: 800; }
 .agent-card-head i { width: 7px; height: 7px; border-radius: 50%; background: #a07c66; box-shadow: 0 0 0 4px rgba(128,93,71,.12); }
 .agent-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 52px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow-sm); }
